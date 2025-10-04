@@ -6,14 +6,99 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Camera Focus UI (Top Right) -->
+  <div id="cameraFocusUI">
+    <h3>Camera Focus</h3>
+    <button id="focusEarth">Focus Earth</button>
+    <button id="focusMoon">Focus Moon</button>
+    <button id="focusMeteor">Focus Last Meteor</button>
+    <button id="focusFree">Free Camera</button>
+  </div>
+
+  <!-- Stats UI (Bottom Left) -->
+  <div id="statsUI">
+    <h3>Last Meteor Stats</h3>
+    <div id="meteorStats">
+      <div>Speed: <span id="lastSpeed">-</span> m/s</div>
+      <div>Size: <span id="lastSize">-</span> m</div>
+      <div>Mass: <span id="lastMass">-</span> kg</div>
+      <div>Energy: <span id="lastEnergy">-</span> J</div>
+      <div>Status: <span id="lastStatus">-</span></div>
+    </div>
+  </div>
+
+  <!-- 2D Map (Bottom Right) -->
+  <div id="mapUI">
+    <h3>Impact Map</h3>
+    <canvas id="impactMap" width="300" height="200"></canvas>
+    <div id="mapInfo">
+      <div>Lat: <span id="impactLat">-</span>°</div>
+      <div>Lon: <span id="impactLon">-</span>°</div>
+      <div>Energy: <span id="mapEnergy">-</span> kt</div>
+    </div>
+  </div>
+
+  <!-- Statistics UI (Bottom Left) -->
+  <div id="statisticsUI">
+    <h3>Simulation Statistics</h3>
+    <div id="simulationStats">
+      <div class="stat-group">
+        <h4>Performance</h4>
+        <div>FPS: <span id="fps">60</span></div>
+        <div>Objects: <span id="objectCount">0</span></div>
+        <div>Memory: <span id="memoryUsage">0</span> MB</div>
+      </div>
+      <div class="stat-group">
+        <h4>Physics</h4>
+        <div>Gravity: <span id="gravityMode">Simple</span></div>
+        <div>Atmosphere: <span id="atmosphereMode">On</span></div>
+        <div>Moon Gravity: <span id="moonGravityMode">On</span></div>
+      </div>
+      <div class="stat-group">
+        <h4>Impacts</h4>
+        <div>Total Energy: <span id="totalEnergy">0</span> J</div>
+        <div>Largest Impact: <span id="largestImpact">0</span> kt</div>
+        <div>Avg Impact: <span id="avgImpact">0</span> kt</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keyboard Shortcuts Help (Top Right) -->
+  <div id="helpUI">
+    <h3>Keyboard Shortcuts</h3>
+    <div id="shortcuts">
+      <div><kbd>Space</kbd> - Fire Meteor</div>
+      <div><kbd>R</kbd> - Reset Scene</div>
+      <div><kbd>P</kbd> - Pause/Resume</div>
+      <div><kbd>E</kbd> - Focus Earth</div>
+      <div><kbd>M</kbd> - Focus Moon</div>
+      <div><kbd>T</kbd> - Focus Meteor</div>
+      <div><kbd>F</kbd> - Free Camera</div>
+      <div><kbd>G</kbd> - Toggle Gravity</div>
+    </div>
+  </div>
+
   <div id="ui">
     <label>Simulation Speed:</label>
-    <input type="range" id="simSpeed" min="0.01" max="5" step="0.01" value="1">
-    <div class="small">x <span id="simSpeedVal">1.00</span></div>
+    <div class="speed-control">
+      <input type="range" id="simSpeed" min="0.01" max="10" step="0.01" value="1">
+      <input type="number" id="simSpeedInput" min="0.01" max="1000" step="0.01" value="1" placeholder="Enter speed">
+      <div class="speed-labels">
+        <span>0.01x</span>
+        <span>1x</span>
+        <span>10x</span>
+      </div>
+      <div class="small">x <span id="simSpeedVal">1.00</span></div>
+    </div>
 
     <label>Meteor Speed</label>
-    <input type="range" id="speed" min="0.01" max="0.2" step="0.01" value="0.05">
-    <div class="small">v <span id="speedVal">0.05</span></div>
+    <div class="speed-control">
+      <input type="range" id="speed" min="0.01" max="0.2" step="0.01" value="0.05">
+      <input type="number" id="speedInput" min="0.01" max="10" step="0.01" value="0.05" placeholder="Enter speed">
+      <div class="small">v <span id="speedVal">0.05</span></div>
+    </div>
+
+      <div class="ui-title">Meteor Impact Simulator</div>
 
   <label>Meteor Size (m)</label>
   <input type="range" id="meteorSize" min="0.1" max="50" step="0.1" value="0.5">
@@ -26,9 +111,10 @@
       <button id="fire">Fire</button>
     </div>
     <div class="counters">
-      Meteors: <span id="meteorCount">0</span><br>
-      Impacts: <span id="impactCount">0</span>
-      <div>Last impact energy: <span id="impactEnergy">-</span></div>
+      <div>Active Meteors: <span id="meteorCount">0</span></div>
+      <div>Total Impacts: <span id="impactCount">0</span></div>
+      <div>Last Impact Energy: <span id="impactEnergy">-</span></div>
+      <div>Simulation Time: <span id="simTime">0.0s</span></div>
     </div>
     <hr>
 
@@ -43,12 +129,75 @@
 
   <label>Physics</label>
   <button id="toggleRealism">Enable Realistic Physics</button>
+  <button id="toggleAtmosphere">Show Atmosphere</button>
+  <button id="toggleMoon">Show Moon</button>
+    <button id="toggleGravityViz">Show Gravity Fields</button>
   <button id="highResTex">Load High-res Earth Texture</button>
   <label style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
   <input type="file" id="uploadTex" accept="image/*" autocomplete="off">
 
     <div id="asteroidData"></div>
+    <hr>
+    <label>Target Body</label>
+    <select id="targetBody">
+      <option value="Earth">Earth</option>
+      <option value="Moon">Moon</option>
+      <option value="Sun">Sun</option>
+    </select>
+    <div class="button-row">
+      <button id="focusTarget">Focus</button>
+      <button id="spawnAtTarget">Spawn At Target</button>
+    </div>
+    <label style="margin-top:8px;display:block"><input type="checkbox" id="showAeroEffects"> Show Aerodynamic Effects</label>
   </div>
+  <!-- Win98-style taskbar -->
+  <div id="win98-taskbar">
+    <button id="start-button">Start</button>
+    <div id="taskbar-buttons">
+      <button id="open-editor">TextPad</button>
+      <button id="open-options">Options</button>
+    </div>
+    <div id="taskbar-tray">TRAY</div>
+  </div>
+
+  <!-- Simple text editor window (hidden by default) -->
+  <div id="text-editor" class="window hidden">
+    <div class="titlebar">
+      <span class="title">TextPad - Info</span>
+      <div class="title-buttons">
+        <button id="editor-min">_</button>
+        <button id="editor-close">X</button>
+      </div>
+    </div>
+    <div class="window-body">
+      <textarea id="editor-content" spellcheck="false"></textarea>
+    </div>
+  </div>
+    <!-- Impact summary window (top-right) -->
+    <div id="impact-window" class="window small">
+      <div class="titlebar">
+        <span class="title">Impact Summaries</span>
+        <div class="title-buttons"><button id="impact-close">X</button></div>
+      </div>
+      <div class="window-body" id="impactPanelContent" style="overflow:auto; max-height:280px; padding:6px; background:transparent"></div>
+    </div>
   <script type="module" src="/main.js"></script>
+
+    <!-- Options app window -->
+    <div id="options-app" class="window hidden">
+      <div class="titlebar">
+        <span class="title">Options</span>
+        <div class="title-buttons"><button id="options-close">X</button></div>
+      </div>
+      <div class="window-body">
+        <label><input type="checkbox" id="opt-sun" checked> Show Sun</label>
+        <label><input type="checkbox" id="opt-moon" checked> Show Moon</label>
+        <label><input type="checkbox" id="opt-trails" checked> Meteor Trails</label>
+        <label><input type="checkbox" id="opt-realistic"> Realistic Physics</label>
+        <label><input type="checkbox" id="opt-moon-craters" checked> Moon Craters Visuals</label>
+        <label style="margin-top:8px;display:block">Meteor Size Keyboard Control: <input type="checkbox" id="opt-key-size"> (Use +/- keys)</label>
+        <label style="margin-top:8px;display:block"><input type="range" id="opt-meteor-size-range" min="0.1" max="200" step="0.1" value="1"> Size</label>
+      </div>
+    </div>
 </body>
 </html>
