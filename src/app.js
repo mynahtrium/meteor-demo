@@ -903,7 +903,7 @@ class App {
     
     // Convert to spherical coordinates
     const lat = Math.asin(y / Math.sqrt(x*x + y*y + z*z)) * 180 / Math.PI;
-    const lon = Math.atan2(z, x) * 180 / Math.PI;
+    const lon = -Math.atan2(z, x) * 180 / Math.PI; // Reverse longitude for correct mapping
     
     return { lat: lat, lon: lon };
   }
