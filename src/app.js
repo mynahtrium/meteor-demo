@@ -37,6 +37,8 @@ class App {
     this.predictedImpactMarker = null;
     // camera framing state for smooth on-spawn framing
     this.cameraFrame = { active: false };
+    // camera shake state
+    this.cameraShake = { amplitude: 0, decay: 0.95, frequency: 20, time: 0 };
   }
 
   // Smoothly frame the camera to look at `targetPos` and move camera to `endCamPos` over `durationMs`
@@ -166,12 +168,90 @@ class App {
     const uploadInput = el('uploadTex');
     if (uploadInput) uploadInput.addEventListener('change', (ev) => this.onUploadTexture(ev));
     const realBtn = el('toggleRealism'); if(realBtn) realBtn.onclick = (e)=>{ this.realistic = !this.realistic; e.target.innerText = this.realistic? 'Disable Realistic Physics' : 'Enable Realistic Physics'; };
+  const solarBtn = el('toggleSolar'); if(solarBtn) solarBtn.onclick = (e)=>{ this.toggleSolarSystem(e); };
+  const dmgBtn = el('toggleDamageOverlay'); if(dmgBtn) dmgBtn.onclick = (e)=>{ this.showDamageOverlay = !this.showDamageOverlay; e.target.innerText = this.showDamageOverlay? 'Hide Damage Overlay' : 'Show Damage Overlay'; };
 
     // initial aiming visibility
     const aimObj = this.scene.getObjectByName('aimingLine'); if (aimObj) aimObj.visible = this.showAiming;
 
     // attempt to auto-load a local earth texture file if present (project root: earth_texture.jpg)
     try { this.tryLoadLocalEarthTexture(); } catch(e){ /* ignore */ }
+  }
+
+  // --- Solar system feature (compact, decorative) ---
+  createSolarSystem(){
+    if(this.solarGroup) return; // already created
+    this.solarGroup = new THREE.Group();
+    this.solarGroup.name = 'solarGroup';
+
+    // Sun (emissive sphere)
+    const sunGeo = new THREE.SphereGeometry(0.5, 32, 32);
+    const sunMat = new THREE.MeshBasicMaterial({ color: 0xffdd66 });
+    const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    sunMesh.name = 'Sun';
+    this.solarGroup.add(sunMesh);
+
+    // Planets array with simple orbital parameters (distance, size, speed)
+    const planets = [
+      { name: 'Mercury', dist: 1.0, size: 0.03, speed: 0.04, color: 0xaaaaaa },
+      { name: 'Venus', dist: 1.6, size: 0.05, speed: 0.02, color: 0xffcc99 },
+      { name: 'Earth', dist: 2.2, size: 0.06, speed: 0.015, color: 0x3366ff },
+      { name: 'Mars', dist: 2.8, size: 0.04, speed: 0.012, color: 0xff6633 },
+      { name: 'Jupiter', dist: 4.0, size: 0.18, speed: 0.007, color: 0xffaa66 },
+      { name: 'Saturn', dist: 5.5, size: 0.14, speed: 0.005, color: 0xffddcc }
+    ];
+
+    this.solarPlanets = [];
+    planets.forEach(p=>{
+      const g = new THREE.Group();
+      g.name = p.name + '_orbit';
+      const geo = new THREE.SphereGeometry(p.size, 16, 16);
+      const mat = new THREE.MeshStandardMaterial({ color: p.color, metalness:0.1, roughness:0.8 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(p.dist, 0, 0);
+      g.add(mesh);
+      // optional ring for orbit path
+      const ringGeo = new THREE.RingGeometry(p.dist - 0.005, p.dist + 0.005, 64);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide, transparent:true, opacity:0.25 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI/2;
+      this.solarGroup.add(ring);
+
+      this.solarGroup.add(g);
+      this.solarPlanets.push({ group:g, mesh, speed:p.speed, dist:p.dist });
+    });
+
+    // place solar group off to the side so it doesn't overlap with Earth in the main scene
+    this.solarGroup.position.set(-6, 2, -8);
+    this.scene.add(this.solarGroup);
+    this.solarVisible = true;
+  }
+
+  destroySolarSystem(){
+    if(!this.solarGroup) return;
+    this.solarPlanets = [];
+    this.scene.remove(this.solarGroup);
+    this.solarGroup.traverse(obj=>{ if(obj.geometry) obj.geometry.dispose(); if(obj.material) { if(obj.material.map) obj.material.map.dispose(); obj.material.dispose(); } });
+    this.solarGroup = null;
+    this.solarVisible = false;
+  }
+
+  toggleSolarSystem(e){
+    if(!this.solarGroup){ this.createSolarSystem(); if(e && e.target) e.target.innerText = 'Hide Solar System'; }
+    else { this.destroySolarSystem(); if(e && e.target) e.target.innerText = 'Show Solar System'; }
+  }
+
+  updateSolarSystem(){
+    if(!this.solarGroup || !this.solarPlanets) return;
+    const t = Date.now() * 0.001 * this.simSpeed;
+    this.solarPlanets.forEach(p=>{
+      // rotate the orbit group to advance the planet
+      p.group.rotation.y = t * p.speed;
+      // small axial spin
+      if(p.mesh) p.mesh.rotation.y += 0.01 * this.simSpeed;
+    });
+    // subtle sun glow: scale pulse
+    const sun = this.solarGroup.getObjectByName('Sun'); if(sun) sun.scale.setScalar(1 + 0.04 * Math.sin(t*2));
   }
 
   tryLoadLocalEarthTexture(){
@@ -280,7 +360,7 @@ class App {
     this.updatePredictedImpact();
     const mouseCursor = this.scene.getObjectByName('mouseCursor'); if(mouseCursor){ mouseCursor.position.copy(this.cursor.position); }
 
-    // camera framing update (if active)
+  // camera framing update (if active)
     if(this.cameraFrame && this.cameraFrame.active){
       const now = Date.now();
       const t = Math.min(1, (now - this.cameraFrame.startTime) / this.cameraFrame.duration);
@@ -290,6 +370,20 @@ class App {
       const newTarget = this.cameraFrame.startTarget.clone().lerp(this.cameraFrame.endTarget, t);
       this.controls.target.copy(newTarget);
       if(t >= 1) this.cameraFrame.active = false;
+    }
+
+    // camera shake update: apply an additive offset to camera.position based on a simple damped noise
+    if(this.cameraShake && this.cameraShake.amplitude > 0.0001){
+      this.cameraShake.time += 0.016 * this.simSpeed;
+      const a = this.cameraShake.amplitude;
+      const f = this.cameraShake.frequency;
+      // simple pseudo-random shake using sines
+      const ox = (Math.sin(this.cameraShake.time * f * 1.3) + Math.sin(this.cameraShake.time * f * 0.7 * 1.1)) * 0.5 * a;
+      const oy = (Math.sin(this.cameraShake.time * f * 1.7) + Math.sin(this.cameraShake.time * f * 0.5 * 1.3)) * 0.5 * a;
+      const oz = (Math.sin(this.cameraShake.time * f * 1.1) + Math.sin(this.cameraShake.time * f * 0.9)) * 0.5 * a;
+      this.camera.position.add(new THREE.Vector3(ox, oy, oz));
+      // decay amplitude
+      this.cameraShake.amplitude *= Math.pow(this.cameraShake.decay, this.simSpeed);
     }
 
     // Meteors update (simple version: non-realistic faster path)
@@ -326,15 +420,49 @@ class App {
           const ke = 0.5 * (meteor.mass || 1) * speedAtImpact * speedAtImpact;
           const keTons = ke / 4.184e9;
           const ie = document.getElementById('impactEnergy'); if(ie) ie.innerText = `${ke.toExponential(3)} J (~${keTons.toFixed(2)} kt)`;
+          // camera shake: map kinetic energy to amplitude (clamped)
+          try{
+            // scale down energy to a usable amplitude range
+            const amp = Math.min(0.8, Math.max(0.02, Math.log10(Math.max(ke,1)) - 6) * 0.08);
+            this.cameraShake.amplitude = Math.max(this.cameraShake.amplitude || 0, amp);
+            this.cameraShake.time = 0;
+          }catch(e){ /* ignore shake errors */ }
         }catch(e){ console.error('impact energy calc', e); const ie = document.getElementById('impactEnergy'); if(ie) ie.innerText = '-'; }
       }
     });
 
     // impact effects
-    this.impactEffects.forEach(effect=>{ effect.mesh.scale.addScalar(0.05*this.simSpeed); effect.mesh.material.opacity -= 0.02*this.simSpeed; if(effect.mesh.material.opacity <= 0) this.scene.remove(effect.mesh); });
-    this.impactEffects = this.impactEffects.filter(e=>e.mesh.material.opacity>0);
+    // animate impact effects (shock rings, dust, flash, damage rings)
+    this.impactEffects.forEach(effect=>{
+      effect.lifetime = (effect.lifetime || 0) + (0.016 * this.simSpeed);
+      const tNorm = effect.lifetime / (effect.maxLifetime || 3.0);
+      if(effect.type === 'shock'){
+        // expand ring
+        const s = 1 + tNorm * 20 * this.simSpeed;
+        if(effect.mesh) effect.mesh.scale.setScalar(s);
+        if(effect.mesh && effect.mesh.material) effect.mesh.material.opacity = Math.max(0, 0.9 * (1 - tNorm));
+        // flash fade
+        if(effect.flash) effect.flash.intensity = Math.max(0, 4.0 * (1 - tNorm));
+        // dust growth and fade
+        if(effect.dust){ effect.dust.scale.setScalar(1 + tNorm * 12); effect.dust.material.opacity = Math.max(0, 0.85 * (1 - tNorm)); }
+        // damage rings fade slowly
+        if(effect.damageRings){ effect.damageRings.forEach(r=>{ if(r.material) r.material.opacity = Math.max(0, r.material.opacity - 0.005*this.simSpeed); }); }
+      }
+      // cleanup when lifetime exceeds
+      if(effect.lifetime > (effect.maxLifetime || 3.0)){
+        if(effect.mesh && effect.mesh.parent) this.scene.remove(effect.mesh);
+        if(effect.flash && effect.flash.parent) this.scene.remove(effect.flash);
+        if(effect.dust && effect.dust.parent) this.scene.remove(effect.dust);
+        if(effect.damageRings) effect.damageRings.forEach(r=>{ if(r.parent) this.scene.remove(r); });
+      }
+    });
+    // remove fully expired effects
+    this.impactEffects = this.impactEffects.filter(e=> e.lifetime <= (e.maxLifetime || 3.0));
 
     this.meteors = this.meteors.filter(m=>m.active);
+
+  // solar system update (if present)
+  this.updateSolarSystem();
 
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
@@ -363,16 +491,126 @@ class App {
   }
 
   createImpact(position){
+    // Compute impact summary (approximate/visualization-oriented)
+    const summary = this.computeImpactSummary(position);
+
+    // Update UI summary area (append)
+    try{
+      const el = document.getElementById('asteroidData');
+      if(el){
+        const html = `
+          <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.45);border-radius:6px;">
+            <b>Impact Summary</b><br>
+            Energy: ${summary.KE.toExponential(3)} J (~${summary.TNT_tons.toFixed(2)} tons TNT, ${summary.Hiroshima_eq.toFixed(2)} Hiroshimas)<br>
+            Crater: ${ (summary.craterDiameter_m/1000).toFixed(2) } km diameter, ${ (summary.craterDepth_m).toFixed(2) } m depth<br>
+            Atmospheric mass loss: ${( (1-summary.massFraction)*100 ).toFixed(1)}% (remaining mass ${(summary.massFinal).toFixed(1)} kg)
+          </div>`;
+        el.innerHTML = html + el.innerHTML;
+      }
+    }catch(e){ console.warn('Failed to update impact UI', e); }
+
     const normal = position.clone().normalize();
-    const geo = new THREE.RingGeometry(0.1,0.2,32);
-    const mat = new THREE.MeshBasicMaterial({ color:0xff0000, side:THREE.DoubleSide, transparent:true, opacity:0.8 });
-    const ring = new THREE.Mesh(geo, mat);
-    const quat = new THREE.Quaternion();
-    quat.setFromUnitVectors(new THREE.Vector3(0,1,0), normal);
-    ring.quaternion.copy(quat);
-    ring.position.copy(normal.multiplyScalar(this.earthRadius+0.01));
-    this.scene.add(ring);
-    this.impactEffects.push({ mesh:ring });
+
+    // Flash: brief point light at impact
+    const flash = new THREE.PointLight(0xffeecc, 4.0, 60);
+    flash.position.copy(normal.clone().multiplyScalar(this.earthRadius + 0.2));
+    this.scene.add(flash);
+
+    // Shock ring: a thin disk that expands and fades
+    const shockGeo = new THREE.RingGeometry(0.01, 0.02, 64);
+    const shockMat = new THREE.MeshBasicMaterial({ color:0xffccaa, side:THREE.DoubleSide, transparent:true, opacity:0.9 });
+    const shock = new THREE.Mesh(shockGeo, shockMat);
+    const shockQuat = new THREE.Quaternion();
+    shockQuat.setFromUnitVectors(new THREE.Vector3(0,1,0), normal);
+    shock.quaternion.copy(shockQuat);
+    shock.position.copy(normal.multiplyScalar(this.earthRadius+0.01));
+    this.scene.add(shock);
+
+    // Dust cloud: a transparent sphere that grows and fades
+    const dustGeo = new THREE.SphereGeometry(0.05, 12, 12);
+    const dustMat = new THREE.MeshStandardMaterial({ color:0x553322, transparent:true, opacity:0.85, roughness:1.0, metalness:0 });
+    const dust = new THREE.Mesh(dustGeo, dustMat);
+    dust.position.copy(normal.clone().multiplyScalar(this.earthRadius+0.02));
+    this.scene.add(dust);
+
+    // Damage rings on the surface (severe/medium damage)
+    const damageRings = [];
+    const addDamageRing = (radius_km, color, opacity)=>{
+      if(this.showDamageOverlay === false) return; // respect overlay toggle
+      const rScene = (radius_km*1000)/this.SCENE_SCALE;
+      const rg = new THREE.RingGeometry(rScene*0.98, rScene*1.02, 128);
+      const rm = new THREE.MeshBasicMaterial({ color, side:THREE.DoubleSide, transparent:true, opacity });
+      const ring = new THREE.Mesh(rg, rm);
+      ring.rotation.copy(shock.rotation);
+      ring.position.copy(normal.clone().multiplyScalar(this.earthRadius+0.015));
+      this.scene.add(ring);
+      damageRings.push(ring);
+    };
+    addDamageRing(summary.severeRadius_km, 0xff4444, 0.25);
+    addDamageRing(summary.glassRadius_km, 0xffaa66, 0.18);
+
+    // push to impactEffects for animation/cleanup
+    this.impactEffects.push({
+      mesh: shock,
+      type: 'shock',
+      lifetime: 0,
+      maxLifetime: 4.0,
+      flash,
+      dust,
+      damageRings
+    });
+  }
+
+  // Compute approximate impact metrics for visualization
+  computeImpactSummary(position){
+    // Try to use last-impacting meteor info if available (best-effort)
+    // We look for the most-recent inactive meteor near position and use its properties; otherwise fallback to defaults
+    let src = null;
+    for(let i=this.meteors.length-1;i>=0;i--){
+      const m = this.meteors[i];
+      if(!m.active){ continue; }
+      // if close to position in scene units
+      if(m.mesh && m.mesh.position.distanceTo(position) < 1.0){ src = m; break; }
+    }
+    // fallback: use a small meteor template
+    if(!src){
+      src = { size: 50, mass: 1e8, physVelocity: new THREE.Vector3(0,0,20000) };
+    }
+
+    const size_m = src.size || 50; // diameter in meters
+    const density = src.density || 3000; // kg/m3
+    const radius_m = size_m/2;
+    const volume = (4/3)*Math.PI*radius_m*radius_m*radius_m;
+    const mass = src.mass || (density * volume);
+    const v = (src.physVelocity && src.physVelocity.length) ? src.physVelocity.length() : (src.velocity? src.velocity*this.SCENE_SCALE : 20000);
+    const KE = 0.5 * mass * v * v; // J
+
+    // TNT conversion (tons of TNT) and Hiroshima eq (~15 kilotons = 15000 tons)
+    const TNT_tons = KE / 4.184e9;
+    const Hiroshima_eq = TNT_tons / 15000;
+
+    // Simple atmospheric ablation model (very simplified): mass loss fraction depends on velocity and size
+    const angle_deg = 45; const angleFactor = Math.sin(angle_deg * Math.PI/180);
+    const ablationFactor = Math.min(0.99, Math.max(0, 0.15 * (v/11000) * (size_m/50) * angleFactor));
+    const massFinal = mass * (1 - ablationFactor);
+    const massFraction = massFinal / mass;
+
+    // Crater diameter scaling (approximate, visualization-focused): empirical power-law on energy
+    // D_final (m) = C * KE^(0.25) with C tuned to produce plausible sizes for common events
+    const C = 0.27; // empirical tuning constant
+    const craterDiameter_m = C * Math.pow(Math.max(KE,1), 0.25);
+    const craterDepth_m = craterDiameter_m / 5.0;
+
+    // Simple damage radii heuristics (km)
+    const severeRadius_km = Math.min(500, Math.max(1, (craterDiameter_m/1000) * 1.5));
+    const glassRadius_km = Math.min(2000, Math.max(severeRadius_km+20, severeRadius_km * 4));
+
+    return {
+      size_m, mass, massFinal, massFraction,
+      KE, TNT_tons, Hiroshima_eq,
+      craterDiameter_m, craterDepth_m,
+      severeRadius_km, glassRadius_km
+    };
   }
 
   // NASA fetchers kept as-is but bound to this
