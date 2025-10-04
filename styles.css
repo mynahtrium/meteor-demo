@@ -106,7 +106,7 @@ canvas { display:block; }
   box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
 }
 
-/* 2D Map UI (Bottom Right) */
+/* Google Maps UI (Bottom Right) */
 #mapUI {
   position: absolute;
   bottom: 18px;
@@ -120,26 +120,65 @@ canvas { display:block; }
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
+  transition: all 0.3s ease;
+}
+
+#mapUI.expanded {
+  width: 600px;
+  height: 400px;
+}
+
+.map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 #mapUI h3 {
-  margin: 0 0 12px 0;
+  margin: 0;
   font-size: 14px;
   color: #cfe6ff;
 }
 
-#impactMap {
+.map-toggle {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: linear-gradient(180deg, #3a4a76, #2b3456);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.map-toggle:hover {
+  filter: brightness(1.1);
+}
+
+.map-container {
   width: 100%;
   height: 200px;
   border: 1px solid rgba(255,255,255,0.2);
   border-radius: 8px;
   background: #000;
   margin-bottom: 12px;
+  overflow: hidden;
+}
+
+#mapUI.expanded .map-container {
+  height: 300px;
+}
+
+#googleMap {
+  width: 100%;
+  height: 100%;
 }
 
 #mapInfo {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
   font-size: 11px;
   color: #b9cfe6;
 }
@@ -210,12 +249,46 @@ canvas { display:block; }
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
+  transition: all 0.3s ease;
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 #helpUI h3 {
-  margin: 0 0 12px 0;
+  margin: 0;
   font-size: 14px;
   color: #cfe6ff;
+}
+
+.help-toggle {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: linear-gradient(180deg, #3a4a76, #2b3456);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.help-toggle:hover {
+  filter: brightness(1.1);
+}
+
+.shortcuts-content {
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.shortcuts-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
 }
 
 #shortcuts div {
@@ -268,7 +341,115 @@ kbd {
 
 .label { position: absolute; pointer-events: none; font-size:12px; padding:4px 8px; background: rgba(0,0,0,0.6); border-radius:6px; border: 1px solid rgba(255,255,255,0.03); color: #fff; transform: translate(-50%, -140%); white-space: nowrap; }
 
+/* Dark theme compatibility */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0a0e1a;
+    color: #e8f0ff;
+  }
+  
+  #ui, #cameraFocusUI, #statsUI, #mapUI, #statisticsUI, #helpUI {
+    background: linear-gradient(180deg, rgba(15,18,28,0.95), rgba(8,10,16,0.9));
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  
+  #ui input, #ui select {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  
+  #ui input:focus, #ui select:focus {
+    border-color: #5ba3ff;
+    box-shadow: 0 0 0 2px rgba(91, 163, 255, 0.15);
+  }
+}
+
+/* Asteroid selection improvements */
+#asteroidSelect {
+  background: rgba(255,255,255,0.04);
+  color: #e6eef8;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+#asteroidSelect option {
+  background: #1a1f2e;
+  color: #e6eef8;
+  padding: 4px;
+}
+
+#asteroidData {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b9cfe6;
+}
+
+#asteroidData b {
+  color: #e6eef8;
+  font-weight: 600;
+}
+
+/* Leaflet dark theme */
+.leaflet-popup-content-wrapper {
+  background: rgba(20,24,36,0.95) !important;
+  color: #e6eef8 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6) !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(20,24,36,0.95) !important;
+}
+
+.leaflet-popup-close-button {
+  color: #e6eef8 !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #cfe6ff !important;
+}
+
+/* Custom marker styling */
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Leaflet control styling */
+.leaflet-control-layers {
+  background: rgba(20,24,36,0.9) !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+  border-radius: 8px !important;
+}
+
+.leaflet-control-layers label {
+  color: #e6eef8 !important;
+}
+
+.leaflet-control-zoom a {
+  background: rgba(20,24,36,0.9) !important;
+  color: #e6eef8 !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: rgba(30,34,46,0.9) !important;
+}
+
 /* small responsive tweaks */
 @media (max-width: 800px){
   #ui{ width: 260px; left: 10px; top: 10px; }
+  #mapUI.expanded {
+    width: calc(100vw - 20px);
+    right: 10px;
+    bottom: 10px;
+  }
 }

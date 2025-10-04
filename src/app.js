@@ -45,6 +45,13 @@ class App {
     this.impactLocations = [];
     this.mapCanvas = null;
     this.mapCtx = null;
+    
+    // Leaflet integration
+    this.leafletMap = null;
+    this.mapMarkers = [];
+    this.mapCircles = [];
+    this.mapExpanded = false;
+    this.leafletReady = false;
 
     // physics
     this.G = 6.67430e-11;
@@ -82,13 +89,40 @@ class App {
       }
     };
 
-    // Atmosphere properties
-    this.atmosphereHeight = 100000; // 100km in meters
+    // Advanced atmosphere properties (much larger atmosphere)
+    this.atmosphereHeight = 500000; // 500km in meters (increased from 200km)
     this.atmosphereHeightScene = this.atmosphereHeight / this.SCENE_SCALE; // scene units
     this.atmosphereDensity = 1.225; // kg/m³ at sea level
     this.dragCoefficient = 0.47; // for spherical objects
     this.burnTemperature = 1500; // Kelvin
     this.burnSpeedThreshold = 2000; // m/s - speed at which burning starts
+    
+    // Enhanced atmosphere physics
+    this.seaLevelPressure = 101325; // Pa (Pascals)
+    this.gasConstant = 287; // J/(kg·K) for air
+    this.standardTemperature = 288; // K at sea level
+    
+    // Orbital mechanics (based on NASA elliptical orbit design)
+    this.orbitalObjects = [];
+    this.orbitalTrails = [];
+    this.keplerTolerance = 1.0e-14;
+    
+    // Tsunami and earthquake effects
+    this.tsunamiZones = [];
+    this.earthquakeEffects = [];
+    
+    // Advanced atmosphere layers (extended for much larger atmosphere)
+    this.atmosphereLayers = [
+      { name: 'Troposphere', height: 12000, density: 1.225, temperature: 288, windSpeed: 10 },
+      { name: 'Stratosphere', height: 50000, density: 0.088, temperature: 216, windSpeed: 50 },
+      { name: 'Mesosphere', height: 80000, density: 0.001, temperature: 190, windSpeed: 100 },
+      { name: 'Thermosphere', height: 200000, density: 0.0001, temperature: 1000, windSpeed: 200 },
+      { name: 'Exosphere', height: 500000, density: 0.00001, temperature: 1500, windSpeed: 300 }
+    ];
+    
+    // Wind system
+    this.windDirection = new THREE.Vector3(1, 0, 0);
+    this.windStrength = 0.1;
 
     this.mouse = new THREE.Vector2();
     this.raycaster = new THREE.Raycaster();
@@ -255,7 +289,10 @@ class App {
     const atmBtn = el('toggleAtmosphere'); if(atmBtn) atmBtn.onclick = (e)=>{ this.showAtmosphere = !this.showAtmosphere; e.target.innerText = this.showAtmosphere? 'Hide Atmosphere' : 'Show Atmosphere'; const atm = this.scene.getObjectByName('atmosphere'); if(atm) atm.visible = this.showAtmosphere; };
     const moonBtn = el('toggleMoon'); if(moonBtn) moonBtn.onclick = (e)=>{ this.showMoon = !this.showMoon; e.target.innerText = this.showMoon? 'Hide Moon' : 'Show Moon'; const moon = this.scene.getObjectByName('moon'); if(moon) moon.visible = this.showMoon; };
     const gravityBtn = el('toggleGravityViz'); if(gravityBtn) gravityBtn.onclick = (e)=>{ this.showGravityViz = !this.showGravityViz; e.target.innerText = this.showGravityViz? 'Hide Gravity Fields' : 'Show Gravity Fields'; this.toggleGravityVisualizers(); };
-    if (el('spawnAsteroid')) el('spawnAsteroid').onclick = () => this.spawnSelectedAsteroid();
+    if (el('selectAsteroid')) el('selectAsteroid').onclick = () => this.selectAsteroid();
+    if (el('toggleMapSize')) el('toggleMapSize').onclick = () => this.toggleMapSize();
+    if (el('toggleHelp')) el('toggleHelp').onclick = () => this.toggleHelp();
+    if (el('createOrbit')) el('createOrbit').onclick = () => this.createRandomOrbit();
     
     // Camera focus buttons
     if (el('focusEarth')) el('focusEarth').onclick = () => this.focusOnEarth();
@@ -271,6 +308,16 @@ class App {
     
     // Initialize map
     this.initMap();
+    
+    // Initialize Leaflet if available
+    if (typeof L !== 'undefined') {
+      this.initLeafletMap();
+      // Load tsunami zones after map is ready
+      setTimeout(() => this.loadTsunamiZones(), 1000);
+    } else {
+      // Set up callback for when Leaflet loads
+      window.initLeafletMap = () => this.initLeafletMap();
+    }
   }
 
   tryLoadLocalEarthTexture(){
@@ -396,7 +443,20 @@ class App {
       
       // Convert meteor size to scene units for proper camera distance
       const meteorSizeScene = this.focusedMeteor.size / this.SCENE_SCALE;
-      const cameraDistance = Math.max(meteorSizeScene * 20, this.earthRadius * 0.5); // At least half Earth radius
+      
+      // Improved camera distance calculation for smaller meteors
+      let cameraDistance;
+      if (meteorSizeScene < this.earthRadius * 0.01) {
+        // Very small meteors - zoom in much closer
+        cameraDistance = Math.max(meteorSizeScene * 50, this.earthRadius * 0.1);
+      } else if (meteorSizeScene < this.earthRadius * 0.1) {
+        // Small meteors - moderate zoom
+        cameraDistance = Math.max(meteorSizeScene * 30, this.earthRadius * 0.2);
+      } else {
+        // Large meteors - standard distance
+        cameraDistance = Math.max(meteorSizeScene * 20, this.earthRadius * 0.5);
+      }
+      
       const cameraPos = meteorPos.clone().add(new THREE.Vector3(0, 0, cameraDistance));
       
       this.frameCameraTo(meteorPos, cameraPos, 1500);
@@ -431,7 +491,19 @@ class App {
       
       // Convert meteor size to scene units for proper camera distance
       const meteorSizeScene = this.focusedMeteor.size / this.SCENE_SCALE;
-      const cameraDistance = Math.max(meteorSizeScene * 20, this.earthRadius * 0.5);
+      
+      // Improved camera distance calculation for smaller meteors
+      let cameraDistance;
+      if (meteorSizeScene < this.earthRadius * 0.01) {
+        // Very small meteors - zoom in much closer
+        cameraDistance = Math.max(meteorSizeScene * 50, this.earthRadius * 0.1);
+      } else if (meteorSizeScene < this.earthRadius * 0.1) {
+        // Small meteors - moderate zoom
+        cameraDistance = Math.max(meteorSizeScene * 30, this.earthRadius * 0.2);
+      } else {
+        // Large meteors - standard distance
+        cameraDistance = Math.max(meteorSizeScene * 20, this.earthRadius * 0.5);
+      }
       
       // Calculate camera position relative to meteor, maintaining current offset
       const currentOffset = this.camera.position.clone().sub(meteorPos);
@@ -514,29 +586,762 @@ class App {
     return toOther.normalize().multiplyScalar(forceMagnitude);
   }
 
-  // Calculate atmospheric density at given altitude
+  // Calculate atmospheric density at given altitude using layered model
   getAtmosphericDensity(altitude) {
-    // Simplified atmospheric model - density decreases exponentially with altitude
-    const scaleHeight = 8400; // meters
-    return this.atmosphereDensity * Math.exp(-altitude / scaleHeight);
+    if (altitude < 0) return this.atmosphereDensity; // Below surface
+    
+    // Find which layer the altitude is in
+    let currentLayer = this.atmosphereLayers[0];
+    for (let i = 0; i < this.atmosphereLayers.length; i++) {
+      if (altitude <= this.atmosphereLayers[i].height) {
+        currentLayer = this.atmosphereLayers[i];
+        break;
+      }
+    }
+    
+    // Interpolate density within the layer
+    const layerIndex = this.atmosphereLayers.indexOf(currentLayer);
+    if (layerIndex === 0) {
+      // Troposphere - exponential decay
+      const scaleHeight = 8400;
+      return this.atmosphereDensity * Math.exp(-altitude / scaleHeight);
+    } else {
+      // Other layers - linear interpolation
+      const prevLayer = this.atmosphereLayers[layerIndex - 1];
+      const layerHeight = currentLayer.height - prevLayer.height;
+      const altitudeInLayer = altitude - prevLayer.height;
+      const ratio = altitudeInLayer / layerHeight;
+      
+      // Exponential interpolation for more realistic density
+      const densityRatio = Math.exp(-ratio * 2);
+      return prevLayer.density * densityRatio;
+    }
   }
 
-  // Calculate drag force on meteor
+  // Get wind force at given altitude
+  getWindForce(altitude) {
+    if (altitude < 0 || altitude > this.atmosphereHeight) return new THREE.Vector3();
+    
+    // Find wind speed for altitude
+    let windSpeed = 0;
+    for (let i = 0; i < this.atmosphereLayers.length; i++) {
+      if (altitude <= this.atmosphereLayers[i].height) {
+        windSpeed = this.atmosphereLayers[i].windSpeed;
+        break;
+      }
+    }
+    
+    // Add some randomness to wind direction
+    const windDir = this.windDirection.clone();
+    windDir.x += (Math.random() - 0.5) * 0.2;
+    windDir.z += (Math.random() - 0.5) * 0.2;
+    windDir.normalize();
+    
+    return windDir.multiplyScalar(windSpeed * this.windStrength);
+  }
+
+  // Calculate atmospheric pressure at given altitude
+  getAtmosphericPressure(altitude) {
+    if (altitude < 0) return this.seaLevelPressure;
+    
+    // Barometric formula: P = P0 * exp(-g * h / (R * T))
+    const g = 9.81; // gravitational acceleration
+    const h = altitude;
+    const R = this.gasConstant;
+    const T = this.standardTemperature;
+    
+    return this.seaLevelPressure * Math.exp(-g * h / (R * T));
+  }
+
+  // Calculate terminal velocity for meteor
+  calculateTerminalVelocity(meteor, altitude) {
+    const density = this.getAtmosphericDensity(altitude);
+    const area = meteor.area || Math.PI * Math.pow(meteor.size / 2, 2);
+    const mass = meteor.mass;
+    
+    // Terminal velocity: v = sqrt(2 * m * g / (ρ * A * Cd))
+    const g = 9.81;
+    const terminalVelocity = Math.sqrt((2 * mass * g) / (density * area * this.dragCoefficient));
+    
+    return terminalVelocity;
+  }
+
+  // Calculate mass reduction due to atmospheric ablation with enhanced physics
+  calculateMassReduction(meteor, dt) {
+    const altitude = meteor.mesh.position.length() * this.SCENE_SCALE - this.earthRadiusMeters;
+    if (altitude < 0 || altitude > this.atmosphereHeight) return 0;
+    
+    const density = this.getAtmosphericDensity(altitude);
+    const pressure = this.getAtmosphericPressure(altitude);
+    const speed = meteor.physVelocity ? meteor.physVelocity.length() : meteor.velocity.length() * this.SCENE_SCALE;
+    
+    if (speed < this.burnSpeedThreshold) return 0;
+    
+    // Enhanced ablation calculation based on pressure and density
+    const ablationCoefficient = 0.002 * (pressure / this.seaLevelPressure); // Pressure-dependent ablation
+    const area = meteor.area || Math.PI * Math.pow(meteor.size / 2, 2);
+    const ablationRate = ablationCoefficient * density * speed * speed * area;
+    
+    // Calculate mass loss
+    const massLoss = ablationRate * dt;
+    
+    // Update meteor mass and size
+    if (meteor.mass > massLoss) {
+      meteor.mass -= massLoss;
+      
+      // Update size based on mass reduction (assuming constant density)
+      const originalVolume = (4/3) * Math.PI * Math.pow(meteor.size / 2, 3);
+      const meteorDensity = meteor.mass / originalVolume;
+      const newVolume = meteor.mass / meteorDensity;
+      const newRadius = Math.pow((3 * newVolume) / (4 * Math.PI), 1/3);
+      meteor.size = newRadius * 2;
+      
+      // Update area
+      meteor.area = Math.PI * Math.pow(meteor.size / 2, 2);
+      
+      // Scale the mesh
+      const radiusMeters = meteor.size / 2;
+      const radiusScene = radiusMeters / this.SCENE_SCALE;
+      meteor.mesh.scale.setScalar(Math.max(radiusScene, 1e-6));
+      
+      return massLoss;
+    }
+    
+    return 0;
+  }
+
+  // Create fire trail for burning meteors
+  createFireTrail(meteor) {
+    if (!meteor.burning || meteor.fireTrail) return;
+    
+    const trailGeometry = new THREE.BufferGeometry();
+    const trailMaterial = new THREE.LineBasicMaterial({
+      color: 0xff4400,
+      transparent: true,
+      opacity: 0.8,
+      linewidth: 3
+    });
+    
+    const trail = new THREE.Line(trailGeometry, trailMaterial);
+    meteor.fireTrail = trail;
+    meteor.trailPoints = [];
+    this.scene.add(trail);
+  }
+
+  // Update fire trail
+  updateFireTrail(meteor) {
+    if (!meteor.fireTrail || !meteor.burning) return;
+    
+    // Add current position to trail
+    meteor.trailPoints.push(meteor.mesh.position.clone());
+    
+    // Limit trail length
+    const maxTrailLength = 50;
+    if (meteor.trailPoints.length > maxTrailLength) {
+      meteor.trailPoints.shift();
+    }
+    
+    // Update trail geometry
+    if (meteor.trailPoints.length > 1) {
+      meteor.fireTrail.geometry.setFromPoints(meteor.trailPoints);
+    }
+  }
+
+  // Kepler's equation solver (based on NASA design)
+  keplerStart3(e, M) {
+    const t34 = e * e;
+    const t35 = e * t34;
+    const t33 = Math.cos(M);
+    return M + (-0.5 * t35 + e + (t34 + 1.5 * t33 * t35) * t33) * Math.sin(M);
+  }
+
+  eps3(e, M, x) {
+    const t1 = Math.cos(x);
+    const t2 = -1 + e * t1;
+    const t3 = Math.sin(x);
+    const t4 = e * t3;
+    const t5 = -x + t4 + M;
+    const t6 = t5 / (0.5 * t5 * t4 / t2 + t2);
+    return t5 / ((0.5 * t3 - (1/6) * t1 * t6) * e * t6 + t2);
+  }
+
+  keplerSolve(e, M) {
+    const Mnorm = M % (2 * Math.PI);
+    let E0 = this.keplerStart3(e, Mnorm);
+    let dE = this.keplerTolerance + 1;
+    let count = 0;
+
+    while (dE > this.keplerTolerance) {
+      const E = E0 - this.eps3(e, Mnorm, E0);
+      dE = Math.abs(E - E0);
+      E0 = E;
+      count++;
+      
+      if (count === 100) {
+        console.warn("KeplerSolve failed to converge!");
+        break;
+      }
+    }
+    return E0;
+  }
+
+  // Create orbital object
+  createOrbitalObject(orbitalParams) {
+    const {
+      semiMajorAxis = 1000000, // meters
+      eccentricity = 0.1,
+      inclination = Math.PI / 6, // 30 degrees
+      longitudeOfAscendingNode = 0,
+      argumentOfPeriapsis = 0,
+      meanAnomaly = 0,
+      period = 3600, // seconds
+      color = 0x00ff00,
+      size = 1000
+    } = orbitalParams;
+
+    // Create orbital object mesh
+    const geometry = new THREE.SphereGeometry(size / this.SCENE_SCALE, 8, 6);
+    const material = new THREE.MeshBasicMaterial({ color: color });
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    // Create orbital trail
+    const trailGeometry = new THREE.BufferGeometry();
+    const trailMaterial = new THREE.LineBasicMaterial({ 
+      color: color, 
+      transparent: true, 
+      opacity: 0.6 
+    });
+    const trail = new THREE.Line(trailGeometry, trailMaterial);
+    
+    const orbitalObject = {
+      mesh: mesh,
+      trail: trail,
+      orbitalParams: {
+        a: semiMajorAxis,
+        e: eccentricity,
+        i: inclination,
+        Ω: longitudeOfAscendingNode,
+        ω: argumentOfPeriapsis,
+        M: meanAnomaly,
+        T: period,
+        n: 2 * Math.PI / period // mean motion
+      },
+      currentTime: 0,
+      trailPoints: []
+    };
+    
+    this.scene.add(mesh);
+    this.scene.add(trail);
+    this.orbitalObjects.push(orbitalObject);
+    
+    return orbitalObject;
+  }
+
+  // Propagate orbital object (based on NASA design)
+  propagateOrbit(orbitalObject, timeStep) {
+    const { a, e, i, Ω, ω, n } = orbitalObject.orbitalParams;
+    
+    // Update mean anomaly
+    orbitalObject.currentTime += timeStep;
+    const M = n * orbitalObject.currentTime;
+    
+    // Solve Kepler's equation
+    const E = this.keplerSolve(e, M);
+    
+    // Calculate position in orbital plane
+    const cosE = Math.cos(E);
+    const sinE = Math.sin(E);
+    const r = a * (1 - e * cosE);
+    
+    const s_x = r * ((cosE - e) / (1 - e * cosE));
+    const s_y = r * ((Math.sqrt(1 - e * e) * sinE) / (1 - e * cosE));
+    const s_z = 0;
+    
+    // Apply 3D rotations (pitch, yaw, roll)
+    let point = new THREE.Vector3(s_x, s_y, s_z);
+    
+    // Pitch ~ inclination (rotate around Y axis)
+    point.applyAxisAngle(new THREE.Vector3(0, 1, 0), i);
+    
+    // Yaw ~ longitude of ascending node (rotate around Z axis)
+    point.applyAxisAngle(new THREE.Vector3(0, 0, 1), Ω);
+    
+    // Roll ~ argument of periapsis (rotate around X axis)
+    point.applyAxisAngle(new THREE.Vector3(1, 0, 0), ω);
+    
+    // Convert to scene coordinates
+    point.divideScalar(this.SCENE_SCALE);
+    
+    // Update mesh position
+    orbitalObject.mesh.position.copy(point);
+    
+    // Update trail
+    orbitalObject.trailPoints.push(point.clone());
+    if (orbitalObject.trailPoints.length > 200) {
+      orbitalObject.trailPoints.shift();
+    }
+    
+    if (orbitalObject.trailPoints.length > 1) {
+      orbitalObject.trail.geometry.setFromPoints(orbitalObject.trailPoints);
+    }
+    
+    return point;
+  }
+
+  // Initialize Leaflet Map
+  initLeafletMap() {
+    if (typeof L === 'undefined') {
+      console.warn('Leaflet not loaded - using fallback canvas map');
+      this.initFallbackMap();
+      return;
+    }
+    
+    this.leafletReady = true;
+    
+    const mapElement = document.getElementById('googleMap');
+    if (!mapElement) return;
+    
+    // Initialize the map
+    this.leafletMap = L.map('googleMap', {
+      center: [0, 0],
+      zoom: 2,
+      zoomControl: true,
+      attributionControl: false
+    });
+    
+    // Add tile layer (using OpenStreetMap)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(this.leafletMap);
+    
+    // Add dark theme tile layer option
+    const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap contributors, © CARTO',
+      maxZoom: 18
+    });
+    
+    // Add satellite tile layer option
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© Esri',
+      maxZoom: 18
+    });
+    
+    // Add layer control
+    const baseMaps = {
+      "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 18
+      }),
+      "Dark Theme": darkLayer,
+      "Satellite": satelliteLayer
+    };
+    
+    L.control.layers(baseMaps).addTo(this.leafletMap);
+    
+    console.log('Leaflet map initialized');
+  }
+
+  // Fallback map when Leaflet is not available
+  initFallbackMap() {
+    const mapElement = document.getElementById('googleMap');
+    if (!mapElement) return;
+    
+    // Create a simple canvas fallback
+    const canvas = document.createElement('canvas');
+    canvas.width = mapElement.offsetWidth;
+    canvas.height = mapElement.offsetHeight;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.background = '#000';
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Draw a simple world map
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = '#666';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Leaflet Map Library Not Available', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('Check internet connection', canvas.width / 2, canvas.height / 2 + 20);
+    ctx.fillText('or CDN access', canvas.width / 2, canvas.height / 2 + 40);
+    
+    mapElement.appendChild(canvas);
+    
+    console.log('Fallback map initialized');
+  }
+
+  // Add impact marker to Leaflet map
+  addImpactToLeafletMap(lat, lon, energy, blastRadius) {
+    if (!this.leafletReady || !this.leafletMap) return;
+    
+    const kilotons = energy / 4.184e12;
+    
+    // Create custom marker icon
+    const markerSize = Math.max(16, Math.min(40, Math.log10(kilotons + 1) * 6));
+    const markerColor = kilotons > 1 ? '#ff4444' : '#ffaa44';
+    
+    const customIcon = L.divIcon({
+      className: 'custom-marker',
+      html: `
+        <div style="
+          width: ${markerSize}px;
+          height: ${markerSize}px;
+          border-radius: 50%;
+          background-color: ${markerColor};
+          border: 2px solid #ffffff;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: ${markerSize * 0.4}px;
+          font-weight: bold;
+          color: #ffffff;
+          cursor: pointer;
+        ">💥</div>
+      `,
+      iconSize: [markerSize, markerSize],
+      iconAnchor: [markerSize / 2, markerSize / 2]
+    });
+    
+    // Create marker
+    const marker = L.marker([lat, lon], {
+      icon: customIcon,
+      title: `Impact: ${kilotons.toFixed(2)} kt`
+    }).addTo(this.leafletMap);
+    
+    // Create popup content
+    const popupContent = `
+      <div style="color: #e6eef8; font-family: Arial, sans-serif; min-width: 200px;">
+        <h3 style="margin: 0 0 8px 0; color: #cfe6ff;">Meteor Impact</h3>
+        <p style="margin: 4px 0;"><strong>Energy:</strong> ${kilotons.toFixed(2)} kt</p>
+        <p style="margin: 4px 0;"><strong>Blast Radius:</strong> ${blastRadius.toFixed(1)} km</p>
+        <p style="margin: 4px 0;"><strong>Location:</strong> ${lat.toFixed(4)}°, ${lon.toFixed(4)}°</p>
+      </div>
+    `;
+    
+    marker.bindPopup(popupContent, {
+      className: 'custom-popup',
+      maxWidth: 250
+    });
+    
+    this.mapMarkers.push(marker);
+    
+    // Create blast radius circle
+    if (blastRadius > 0) {
+      const circle = L.circle([lat, lon], {
+        color: markerColor,
+        fillColor: markerColor,
+        fillOpacity: 0.2,
+        radius: blastRadius * 1000 // Convert km to meters
+      }).addTo(this.leafletMap);
+      
+      this.mapCircles.push(circle);
+    }
+    
+    // Create effect areas (death/life percentage zones)
+    this.createEffectAreas(lat, lon, blastRadius);
+    
+    // Auto-zoom to impact area
+    this.autoZoomToImpact(lat, lon, blastRadius);
+  }
+
+  // Calculate blast radius based on energy
+  calculateBlastRadius(energy) {
+    const kilotons = energy / 4.184e12;
+    // Simplified blast radius calculation (km)
+    return Math.pow(kilotons, 0.33) * 0.5;
+  }
+
+  // Create effect areas showing death/life percentage zones
+  createEffectAreas(lat, lon, blastRadius) {
+    if (!this.leafletReady || !this.leafletMap) return;
+    
+    const effectZones = [
+      { radius: blastRadius * 0.1, color: '#000000', opacity: 0.8, label: 'Instant Death (100%)' },
+      { radius: blastRadius * 0.3, color: '#ff0000', opacity: 0.6, label: 'Severe Burns (90%)' },
+      { radius: blastRadius * 0.5, color: '#ff8800', opacity: 0.5, label: 'Third Degree Burns (70%)' },
+      { radius: blastRadius * 0.7, color: '#ffaa00', opacity: 0.4, label: 'Second Degree Burns (50%)' },
+      { radius: blastRadius * 0.9, color: '#0000ff', opacity: 0.3, label: 'First Degree Burns (30%)' },
+      { radius: blastRadius * 1.2, color: '#00ff00', opacity: 0.2, label: 'Minor Injuries (10%)' }
+    ];
+    
+    effectZones.forEach((zone, index) => {
+      const circle = L.circle([lat, lon], {
+        color: zone.color,
+        fillColor: zone.color,
+        fillOpacity: zone.opacity,
+        radius: zone.radius * 1000, // Convert km to meters
+        weight: 2
+      }).addTo(this.leafletMap);
+      
+      // Add popup with zone information
+      circle.bindPopup(`
+        <div style="color: #e6eef8; font-family: Arial, sans-serif;">
+          <h4 style="margin: 0 0 8px 0; color: #cfe6ff;">${zone.label}</h4>
+          <p style="margin: 4px 0;"><strong>Radius:</strong> ${zone.radius.toFixed(1)} km</p>
+        </div>
+      `);
+      
+      this.mapCircles.push(circle);
+    });
+  }
+
+  // Auto-zoom to impact area
+  autoZoomToImpact(lat, lon, blastRadius) {
+    if (!this.leafletReady || !this.leafletMap) return;
+    
+    // Calculate appropriate zoom level based on blast radius
+    const maxRadius = Math.max(blastRadius * 1.5, 10); // At least 10km view
+    const bounds = L.latLngBounds(
+      [lat - maxRadius / 111, lon - maxRadius / (111 * Math.cos(lat * Math.PI / 180))],
+      [lat + maxRadius / 111, lon + maxRadius / (111 * Math.cos(lat * Math.PI / 180))]
+    );
+    
+    // Smooth zoom to the impact area
+    this.leafletMap.fitBounds(bounds, { padding: [20, 20] });
+  }
+
+  // Load tsunami zones from USGS data
+  async loadTsunamiZones() {
+    try {
+      // Simulated tsunami zone data (in real implementation, would fetch from USGS API)
+      const tsunamiZoneData = [
+        { name: "Pacific Ring of Fire", lat: 0, lon: -180, radius: 50000, risk: "High" },
+        { name: "Japan Trench", lat: 38, lon: 142, radius: 20000, risk: "Very High" },
+        { name: "Cascadia Subduction", lat: 45, lon: -125, radius: 30000, risk: "High" },
+        { name: "Sumatra Trench", lat: -3, lon: 100, radius: 25000, risk: "Very High" },
+        { name: "Chile Trench", lat: -20, lon: -70, radius: 15000, risk: "High" },
+        { name: "Aleutian Trench", lat: 52, lon: -175, radius: 20000, risk: "High" }
+      ];
+      
+      tsunamiZoneData.forEach(zone => {
+        this.addTsunamiZone(zone);
+      });
+      
+      console.log('Loaded tsunami zones:', tsunamiZoneData.length);
+    } catch (error) {
+      console.error('Error loading tsunami zones:', error);
+    }
+  }
+
+  // Add tsunami zone to map
+  addTsunamiZone(zoneData) {
+    if (!this.leafletReady || !this.leafletMap) return;
+    
+    const { name, lat, lon, radius, risk } = zoneData;
+    
+    // Color based on risk level
+    const colors = {
+      'Low': '#00ff00',
+      'Medium': '#ffff00', 
+      'High': '#ff8800',
+      'Very High': '#ff0000'
+    };
+    
+    const color = colors[risk] || '#ff8800';
+    
+    // Create tsunami zone circle
+    const tsunamiZone = L.circle([lat, lon], {
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.1,
+      radius: radius * 1000, // Convert km to meters
+      weight: 2,
+      dashArray: '10, 5'
+    }).addTo(this.leafletMap);
+    
+    // Add popup
+    tsunamiZone.bindPopup(`
+      <div style="color: #e6eef8; font-family: Arial, sans-serif;">
+        <h4 style="margin: 0 0 8px 0; color: #cfe6ff;">${name}</h4>
+        <p style="margin: 4px 0;"><strong>Risk Level:</strong> ${risk}</p>
+        <p style="margin: 4px 0;"><strong>Radius:</strong> ${radius} km</p>
+        <p style="margin: 4px 0;"><strong>Type:</strong> Tsunami Zone</p>
+      </div>
+    `);
+    
+    this.tsunamiZones.push(tsunamiZone);
+  }
+
+  // Calculate earthquake effects after meteor impact
+  calculateEarthquakeEffects(lat, lon, energy) {
+    const kilotons = energy / 4.184e12;
+    
+    // Calculate earthquake magnitude based on impact energy
+    // Using empirical relationship: Mw ≈ log10(energy) - 4.4
+    const magnitude = Math.log10(kilotons * 4.184e12) - 4.4;
+    
+    // Calculate earthquake radius based on magnitude
+    const earthquakeRadius = Math.pow(10, (magnitude - 2.5) / 1.5) * 10; // km
+    
+    // Create earthquake effect on map
+    this.addEarthquakeEffect(lat, lon, magnitude, earthquakeRadius);
+    
+    // Check for tsunami generation if impact is in ocean
+    if (this.isOceanImpact(lat, lon)) {
+      this.generateTsunami(lat, lon, magnitude, earthquakeRadius);
+    }
+    
+    console.log(`Earthquake: M${magnitude.toFixed(1)} with ${earthquakeRadius.toFixed(1)}km radius`);
+  }
+
+  // Add earthquake effect to map
+  addEarthquakeEffect(lat, lon, magnitude, radius) {
+    if (!this.leafletReady || !this.leafletMap) return;
+    
+    // Color based on magnitude
+    let color = '#00ff00'; // Green for small
+    if (magnitude > 4) color = '#ffff00'; // Yellow
+    if (magnitude > 5) color = '#ff8800'; // Orange  
+    if (magnitude > 6) color = '#ff0000'; // Red
+    if (magnitude > 7) color = '#800080'; // Purple
+    
+    // Create earthquake zone
+    const earthquakeZone = L.circle([lat, lon], {
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.2,
+      radius: radius * 1000, // Convert km to meters
+      weight: 3,
+      dashArray: '5, 5'
+    }).addTo(this.leafletMap);
+    
+    // Add popup
+    earthquakeZone.bindPopup(`
+      <div style="color: #e6eef8; font-family: Arial, sans-serif;">
+        <h4 style="margin: 0 0 8px 0; color: #cfe6ff;">Earthquake</h4>
+        <p style="margin: 4px 0;"><strong>Magnitude:</strong> M${magnitude.toFixed(1)}</p>
+        <p style="margin: 4px 0;"><strong>Radius:</strong> ${radius.toFixed(1)} km</p>
+        <p style="margin: 4px 0;"><strong>Intensity:</strong> ${this.getEarthquakeIntensity(magnitude)}</p>
+      </div>
+    `);
+    
+    this.earthquakeEffects.push(earthquakeZone);
+  }
+
+  // Generate tsunami effect
+  generateTsunami(lat, lon, magnitude, earthquakeRadius) {
+    if (!this.leafletReady || !this.leafletMap) return;
+    
+    // Tsunami radius is typically 10-50x the earthquake radius
+    const tsunamiRadius = earthquakeRadius * (20 + Math.random() * 30);
+    
+    // Create tsunami zone
+    const tsunamiZone = L.circle([lat, lon], {
+      color: '#0066ff',
+      fillColor: '#0066ff',
+      fillOpacity: 0.15,
+      radius: tsunamiRadius * 1000, // Convert km to meters
+      weight: 2,
+      dashArray: '15, 10'
+    }).addTo(this.leafletMap);
+    
+    // Add popup
+    tsunamiZone.bindPopup(`
+      <div style="color: #e6eef8; font-family: Arial, sans-serif;">
+        <h4 style="margin: 0 0 8px 0; color: #cfe6ff;">Tsunami</h4>
+        <p style="margin: 4px 0;"><strong>Triggered by:</strong> M${magnitude.toFixed(1)} Earthquake</p>
+        <p style="margin: 4px 0;"><strong>Radius:</strong> ${tsunamiRadius.toFixed(1)} km</p>
+        <p style="margin: 4px 0;"><strong>Risk:</strong> ${this.getTsunamiRisk(magnitude)}</p>
+      </div>
+    `);
+    
+    this.earthquakeEffects.push(tsunamiZone);
+  }
+
+  // Check if impact location is in ocean
+  isOceanImpact(lat, lon) {
+    // Simple ocean detection (in real implementation, would use proper ocean data)
+    // Most of Earth's surface is ocean, so use a simple probability
+    return Math.random() > 0.3; // 70% chance of ocean impact
+  }
+
+  // Get earthquake intensity description
+  getEarthquakeIntensity(magnitude) {
+    if (magnitude < 3) return 'Weak';
+    if (magnitude < 4) return 'Light';
+    if (magnitude < 5) return 'Moderate';
+    if (magnitude < 6) return 'Strong';
+    if (magnitude < 7) return 'Major';
+    if (magnitude < 8) return 'Great';
+    return 'Catastrophic';
+  }
+
+  // Get tsunami risk level
+  getTsunamiRisk(magnitude) {
+    if (magnitude < 5) return 'Low';
+    if (magnitude < 6) return 'Medium';
+    if (magnitude < 7) return 'High';
+    return 'Very High';
+  }
+
+  // Toggle map size
+  toggleMapSize() {
+    const mapUI = document.getElementById('mapUI');
+    const toggleBtn = document.getElementById('toggleMapSize');
+    
+    this.mapExpanded = !this.mapExpanded;
+    
+    if (this.mapExpanded) {
+      mapUI.classList.add('expanded');
+      toggleBtn.textContent = 'Collapse';
+    } else {
+      mapUI.classList.remove('expanded');
+      toggleBtn.textContent = 'Expand';
+    }
+    
+    // Trigger map resize
+    if (this.leafletReady && this.leafletMap) {
+      setTimeout(() => {
+        this.leafletMap.invalidateSize();
+      }, 300);
+    }
+  }
+
+  // Toggle help UI
+  toggleHelp() {
+    const shortcuts = document.getElementById('shortcuts');
+    const toggleBtn = document.getElementById('toggleHelp');
+    
+    shortcuts.classList.toggle('collapsed');
+    
+    if (shortcuts.classList.contains('collapsed')) {
+      toggleBtn.textContent = 'Expand';
+    } else {
+      toggleBtn.textContent = 'Collapse';
+    }
+  }
+
+  // Calculate drag force on meteor with wind effects
   calculateDragForce(meteor) {
     const altitude = meteor.mesh.position.length() * this.SCENE_SCALE - this.earthRadiusMeters;
     if (altitude < 0) return new THREE.Vector3(); // Below surface
     
     const density = this.getAtmosphericDensity(altitude);
-    const speed = meteor.physVelocity ? meteor.physVelocity.length() : meteor.velocity.length() * this.SCENE_SCALE;
+    const velocity = meteor.physVelocity ? meteor.physVelocity.clone() : meteor.velocity.clone().multiplyScalar(this.SCENE_SCALE);
+    const speed = velocity.length();
     
     if (speed < 1) return new THREE.Vector3(); // No drag for very slow objects
     
     const area = meteor.area || Math.PI * Math.pow(meteor.size / 2, 2);
-    const dragForce = 0.5 * density * speed * speed * this.dragCoefficient * area;
     
-    // Drag force opposes velocity direction
-    const velocity = meteor.physVelocity ? meteor.physVelocity.clone() : meteor.velocity.clone().multiplyScalar(this.SCENE_SCALE);
-    const dragDirection = velocity.normalize().multiplyScalar(-1);
+    // Get wind force
+    const windForce = this.getWindForce(altitude);
+    
+    // Calculate relative velocity (meteor velocity - wind velocity)
+    const relativeVelocity = velocity.clone().sub(windForce);
+    const relativeSpeed = relativeVelocity.length();
+    
+    if (relativeSpeed < 0.1) return new THREE.Vector3(); // No drag for very slow relative motion
+    
+    // Drag force based on relative velocity
+    const dragForce = 0.5 * density * relativeSpeed * relativeSpeed * this.dragCoefficient * area;
+    
+    // Drag force opposes relative velocity direction
+    const dragDirection = relativeVelocity.normalize().multiplyScalar(-1);
     
     return dragDirection.multiplyScalar(dragForce);
   }
@@ -548,6 +1353,110 @@ class App {
     
     const speed = meteor.physVelocity ? meteor.physVelocity.length() : meteor.velocity.length() * this.SCENE_SCALE;
     return speed > this.burnSpeedThreshold;
+  }
+
+  // Create randomized meteor geometry for more realistic appearance
+  createRandomizedMeteor() {
+    // Create irregular geometry using noise or random deformation
+    const baseGeo = new THREE.SphereGeometry(1, 12, 8);
+    const positions = baseGeo.attributes.position.array;
+    
+    // Add random noise to vertices for irregular shape
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i];
+      const y = positions[i + 1];
+      const z = positions[i + 2];
+      
+      // Calculate distance from center
+      const distance = Math.sqrt(x * x + y * y + z * z);
+      
+      // Add random noise based on distance from center
+      const noise = (Math.random() - 0.5) * 0.3;
+      const scale = 1 + noise * (1 - distance * 0.5); // More noise at edges
+      
+      positions[i] *= scale;
+      positions[i + 1] *= scale;
+      positions[i + 2] *= scale;
+    }
+    
+    baseGeo.attributes.position.needsUpdate = true;
+    baseGeo.computeVertexNormals();
+    
+    // Try to load meteor texture
+    const meteorMat = new THREE.MeshStandardMaterial({ 
+      color: 0x888888, 
+      metalness: Math.random() * 0.2 + 0.05, 
+      roughness: Math.random() * 0.4 + 0.4,
+      bumpScale: Math.random() * 0.1 + 0.05
+    });
+    
+    // Load meteor texture if available
+    this.loadMeteorTexture(meteorMat);
+    
+    return new THREE.Mesh(baseGeo, meteorMat);
+  }
+
+  // Load meteor texture
+  loadMeteorTexture(material) {
+    const loader = new THREE.TextureLoader();
+    loader.load('./meteor_texture.jpg', texture => {
+      texture.encoding = THREE.sRGBEncoding;
+      texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
+      material.map = texture;
+      material.needsUpdate = true;
+      console.log('Meteor texture loaded successfully');
+    }, undefined, err => {
+      console.debug('Meteor texture not found, using default material');
+    });
+  }
+
+  // Get meteor density from NASA NEO API
+  async getMeteorDensity(asteroidId) {
+    try {
+      const apiKey = document.getElementById('apiKey')?.value.trim();
+      if (!apiKey) return 3000; // Default density in kg/m³
+      
+      const response = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${asteroidId}?api_key=${apiKey}`);
+      const data = await response.json();
+      
+      // Extract density from NASA data if available
+      if (data.orbital_data && data.orbital_data.density) {
+        return parseFloat(data.orbital_data.density) * 1000; // Convert g/cm³ to kg/m³
+      }
+      
+      // Estimate density based on asteroid type
+      const spectralType = data.orbital_data?.spectral_type || 'Unknown';
+      return this.estimateDensityFromType(spectralType);
+      
+    } catch (error) {
+      console.warn('Could not fetch meteor density from NASA API:', error);
+      return 3000; // Default density
+    }
+  }
+
+  // Estimate density based on asteroid spectral type
+  estimateDensityFromType(spectralType) {
+    const densityMap = {
+      'C': 2000,  // Carbonaceous - low density
+      'S': 3000,  // Silicate - medium density  
+      'M': 5000,  // Metallic - high density
+      'P': 1500,  // Primitive - very low density
+      'D': 1800,  // Dark - low density
+      'T': 2500,  // Trojan - medium-low density
+      'B': 2200,  // Blue - low-medium density
+      'G': 2100,  // Gray - low-medium density
+      'F': 2300,  // F-type - low-medium density
+      'A': 4000,  // A-type - high density
+      'E': 3500,  // Enstatite - medium-high density
+      'R': 3200,  // R-type - medium density
+      'V': 2800,  // Vesta-like - medium density
+      'Unknown': 3000 // Default
+    };
+    
+    return densityMap[spectralType] || 3000;
   }
 
   // Create burning effect for meteor
@@ -601,8 +1510,8 @@ class App {
     });
   }
 
-  // Create simple explosion effect
-  createExplosion(position, energy) {
+  // Create dome-shaped explosion effect
+  createExplosion(position, energy, meteorSize = 1000) {
     if (!this.enableExplosions) return;
     
     // Add to impact map
@@ -611,9 +1520,182 @@ class App {
     // Log explosion data
     const kilotons = energy / 4.184e12;
     console.log(`Impact: ${kilotons.toFixed(2)} kt`);
+    
+    // Create dome-shaped explosion
+    this.createDomeExplosion(position, energy, meteorSize);
   }
 
+  // Create dome-shaped explosion effect
+  createDomeExplosion(position, energy, meteorSize = 1000) {
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(position);
+    
+    // Calculate explosion size based on energy and meteor size
+    const kilotons = energy / 4.184e12;
+    const meteorSizeFactor = Math.max(0.5, Math.min(3.0, Math.log10(meteorSize + 1) / 2));
+    const baseRadius = Math.max(0.1, Math.min(2.0, Math.pow(kilotons, 0.3) * 0.5 * meteorSizeFactor));
+    
+    // Create dome geometry
+    const domeGeo = new THREE.SphereGeometry(baseRadius, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    const domeMat = new THREE.MeshBasicMaterial({
+      color: 0xff4400,
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    const dome = new THREE.Mesh(domeGeo, domeMat);
+    explosionGroup.add(dome);
+    
+    // Create fire particles
+    const particleCount = Math.min(100, Math.max(20, kilotons * 10));
+    const particles = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const velocities = new Float32Array(particleCount * 3);
+    const lifetimes = new Float32Array(particleCount);
+    
+    for (let i = 0; i < particleCount; i++) {
+      const i3 = i * 3;
+      // Random position within dome
+      const angle = Math.random() * Math.PI * 2;
+      const height = Math.random() * baseRadius;
+      const radius = Math.random() * baseRadius * 0.8;
+      
+      positions[i3] = Math.cos(angle) * radius;
+      positions[i3 + 1] = height;
+      positions[i3 + 2] = Math.sin(angle) * radius;
+      
+      // Random velocity
+      velocities[i3] = (Math.random() - 0.5) * 0.1;
+      velocities[i3 + 1] = Math.random() * 0.2 + 0.1;
+      velocities[i3 + 2] = (Math.random() - 0.5) * 0.1;
+      
+      lifetimes[i] = Math.random() * 2 + 1;
+    }
+    
+    particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+    particles.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+    
+    const particleMat = new THREE.PointsMaterial({
+      color: 0xff6600,
+      size: 0.05,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending
+    });
+    
+    const particleSystem = new THREE.Points(particles, particleMat);
+    explosionGroup.add(particleSystem);
+    
+    this.scene.add(explosionGroup);
+    
+    // Add to explosion effects for animation
+    this.explosionEffects.push({
+      group: explosionGroup,
+      dome: dome,
+      particles: particleSystem,
+      lifetime: 3.0,
+      maxLifetime: 3.0,
+      baseRadius: baseRadius,
+      energy: energy
+    });
+    
+    // Create mushroom cloud for large explosions
+    if (kilotons > 1) {
+      this.createMushroomCloud(position, energy);
+    }
+  }
 
+  // Create mushroom cloud effect
+  createMushroomCloud(position, energy) {
+    const kilotons = energy / 4.184e12;
+    const cloudGroup = new THREE.Group();
+    cloudGroup.position.copy(position);
+    
+    // Calculate cloud size based on energy
+    const cloudHeight = Math.max(0.5, Math.min(5.0, Math.pow(kilotons, 0.4) * 1.5));
+    const cloudRadius = Math.max(0.3, Math.min(3.0, Math.pow(kilotons, 0.3) * 1.0));
+    
+    // Create stem (vertical column)
+    const stemGeo = new THREE.CylinderGeometry(cloudRadius * 0.3, cloudRadius * 0.5, cloudHeight * 0.6, 8);
+    const stemMat = new THREE.MeshBasicMaterial({
+      color: 0x666666,
+      transparent: true,
+      opacity: 0.7
+    });
+    const stem = new THREE.Mesh(stemGeo, stemMat);
+    stem.position.y = cloudHeight * 0.3;
+    cloudGroup.add(stem);
+    
+    // Create mushroom cap
+    const capGeo = new THREE.SphereGeometry(cloudRadius, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    const capMat = new THREE.MeshBasicMaterial({
+      color: 0x888888,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide
+    });
+    const cap = new THREE.Mesh(capGeo, capMat);
+    cap.position.y = cloudHeight * 0.8;
+    cloudGroup.add(cap);
+    
+    // Create smoke particles
+    const particleCount = Math.min(200, Math.max(50, kilotons * 20));
+    const particles = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const velocities = new Float32Array(particleCount * 3);
+    const lifetimes = new Float32Array(particleCount);
+    
+    for (let i = 0; i < particleCount; i++) {
+      const i3 = i * 3;
+      // Random position within cloud
+      const angle = Math.random() * Math.PI * 2;
+      const height = Math.random() * cloudHeight;
+      const radius = Math.random() * cloudRadius * 0.8;
+      
+      positions[i3] = Math.cos(angle) * radius;
+      positions[i3 + 1] = height;
+      positions[i3 + 2] = Math.sin(angle) * radius;
+      
+      // Upward velocity with some randomness
+      velocities[i3] = (Math.random() - 0.5) * 0.05;
+      velocities[i3 + 1] = Math.random() * 0.1 + 0.05;
+      velocities[i3 + 2] = (Math.random() - 0.5) * 0.05;
+      
+      lifetimes[i] = Math.random() * 10 + 5;
+    }
+    
+    particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+    particles.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+    
+    const particleMat = new THREE.PointsMaterial({
+      color: 0xaaaaaa,
+      size: 0.1,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.NormalBlending
+    });
+    
+    const particleSystem = new THREE.Points(particles, particleMat);
+    cloudGroup.add(particleSystem);
+    
+    this.scene.add(cloudGroup);
+    
+    // Add to explosion effects for animation
+    this.explosionEffects.push({
+      group: cloudGroup,
+      stem: stem,
+      cap: cap,
+      particles: particleSystem,
+      lifetime: 15.0,
+      maxLifetime: 15.0,
+      cloudHeight: cloudHeight,
+      cloudRadius: cloudRadius,
+      energy: energy,
+      type: 'mushroom'
+    });
+  }
 
   // Update explosion effects
   updateExplosionEffects() {
@@ -622,15 +1704,80 @@ class App {
       const effect = this.explosionEffects[i];
       effect.lifetime -= 0.02 * this.simSpeed;
       
+      // Update dome explosion
+      if (effect.dome) {
+        const progress = 1 - (effect.lifetime / effect.maxLifetime);
+        
+        // Scale dome up over time
+        const scale = 1 + progress * 2;
+        effect.dome.scale.setScalar(scale);
+        
+        // Fade dome out
+        effect.dome.material.opacity = (1 - progress) * 0.8;
+        
+        // Update dome color (red to orange to yellow)
+        const hue = 0.1 - progress * 0.1; // Red to yellow
+        effect.dome.material.color.setHSL(hue, 1, 0.5);
+        
+        // Rotate with Earth's rotation (simplified)
+        effect.dome.rotation.y += 0.001 * this.simSpeed;
+      }
+      
+      // Update mushroom cloud
+      if (effect.type === 'mushroom') {
+        const progress = 1 - (effect.lifetime / effect.maxLifetime);
+        
+        // Scale cloud up over time
+        const scale = 1 + progress * 1.5;
+        effect.stem.scale.setScalar(scale);
+        effect.cap.scale.setScalar(scale);
+        
+        // Move cloud up and spread out
+        const altitude = effect.group.position.length() * this.SCENE_SCALE - this.earthRadiusMeters;
+        const atmosphereHeight = this.atmosphereHeight;
+        
+        if (altitude < atmosphereHeight) {
+          // Cloud is still in atmosphere, continue rising
+          effect.group.position.y += 0.01 * this.simSpeed;
+        } else {
+          // Cloud has reached atmosphere boundary, spread horizontally
+          const spreadFactor = Math.min(2, 1 + progress * 3);
+          effect.cap.scale.x = spreadFactor;
+          effect.cap.scale.z = spreadFactor;
+        }
+        
+        // Fade cloud out over time
+        const opacity = (1 - progress) * 0.6;
+        effect.stem.material.opacity = opacity;
+        effect.cap.material.opacity = opacity;
+      }
+      
       // Update particles
-      if (effect.group && effect.group.children) {
-        effect.group.children.forEach(particle => {
-          if (particle.userData) {
-            particle.position.add(particle.userData.velocity.clone().multiplyScalar(0.02 * this.simSpeed));
-            particle.userData.lifetime -= 0.02 * this.simSpeed;
-            particle.material.opacity = particle.userData.lifetime / particle.userData.maxLifetime;
-          }
-        });
+      if (effect.particles) {
+        const positions = effect.particles.geometry.attributes.position.array;
+        const velocities = effect.particles.geometry.attributes.velocity.array;
+        const lifetimes = effect.particles.geometry.attributes.lifetime.array;
+        
+        for (let j = 0; j < positions.length; j += 3) {
+          // Update position
+          positions[j] += velocities[j] * 0.02 * this.simSpeed;
+          positions[j + 1] += velocities[j + 1] * 0.02 * this.simSpeed;
+          positions[j + 2] += velocities[j + 2] * 0.02 * this.simSpeed;
+          
+          // Update lifetime
+          const particleIndex = j / 3;
+          lifetimes[particleIndex] -= 0.02 * this.simSpeed;
+          
+          // Add gravity to particles
+          velocities[j + 1] -= 0.01 * this.simSpeed; // Gravity
+        }
+        
+        effect.particles.geometry.attributes.position.needsUpdate = true;
+        effect.particles.geometry.attributes.lifetime.needsUpdate = true;
+        
+        // Fade particles
+        const progress = 1 - (effect.lifetime / effect.maxLifetime);
+        effect.particles.material.opacity = (1 - progress) * 0.8;
       }
       
       // Remove if expired
@@ -697,14 +1844,8 @@ class App {
     const mass = density * volume;
     const area = Math.PI * Math.pow(midSize/2, 2);
     
-    // Create meteor mesh
-    const meteorGeo = new THREE.SphereGeometry(1, 16, 16);
-    const meteorMat = new THREE.MeshStandardMaterial({ 
-      color: 0xaaaaaa, 
-      metalness: 0.1, 
-      roughness: 0.6 
-    });
-    const meteor = new THREE.Mesh(meteorGeo, meteorMat);
+    // Create randomized meteor mesh
+    const meteor = this.createRandomizedMeteor();
     
     // Position meteor at camera position
     meteor.position.copy(this.camera.position);
@@ -789,8 +1930,10 @@ class App {
       if (r < this.earthRadius + 0.2) break; // Stop if hitting Earth
       
       // Apply gravity
-      const gravityAccel = pos.clone().normalize().multiplyScalar(-this.gravityStrength / (r * r));
-      vel.add(gravityAccel.multiplyScalar(dt));
+      if (r > 0.1) { // Avoid division by zero
+        const gravityAccel = pos.clone().normalize().multiplyScalar(-this.gravityStrength / (r * r));
+        vel.add(gravityAccel.multiplyScalar(dt));
+      }
       pos.add(vel.clone().multiplyScalar(dt));
       
       // Continue trajectory indefinitely (no distance limit)
@@ -826,9 +1969,7 @@ class App {
     const speedEl = document.getElementById('speed');
     const speed = speedEl ? parseFloat(speedEl.value) : 0.05;
     const size = 10000; // 10,000 meters diameter (10km)
-    const meteorGeo = new THREE.SphereGeometry(1, 16, 16);
-    const meteorMat = new THREE.MeshStandardMaterial({ color:0x888888, metalness:0.2, roughness:0.5 });
-    const meteor = new THREE.Mesh(meteorGeo, meteorMat);
+    const meteor = this.createRandomizedMeteor();
     meteor.position.copy(this.camera.position);
     const dir = new THREE.Vector3().subVectors(this.cursor.position, this.camera.position).normalize();
     const density = 3000; // 3g/cm³ = 3000 kg/m³
@@ -1033,6 +2174,36 @@ class App {
     this.gravityVisualizers = [];
     this.trajectoryLines.forEach(t=>{ this.scene.remove(t.line); });
     this.trajectoryLines = [];
+    
+    // Clear Leaflet markers and circles
+    this.mapMarkers.forEach(marker => {
+      if (marker.remove) {
+        marker.remove();
+      }
+    });
+    this.mapCircles.forEach(circle => {
+      if (circle.remove) {
+        circle.remove();
+      }
+    });
+    this.mapMarkers = [];
+    this.mapCircles = [];
+    
+    // Clear earthquake effects
+    this.earthquakeEffects.forEach(effect => {
+      if (effect.remove) {
+        effect.remove();
+      }
+    });
+    this.earthquakeEffects = [];
+    
+    // Clear orbital objects
+    this.orbitalObjects.forEach(orbitalObject => {
+      this.scene.remove(orbitalObject.mesh);
+      this.scene.remove(orbitalObject.trail);
+    });
+    this.orbitalObjects = [];
+    
     this.impactCount = 0; const ic = document.getElementById('impactCount'); if(ic) ic.innerText = '0';
     this.totalImpactEnergy = 0;
     this.largestImpactEnergy = 0;
@@ -1086,6 +2257,11 @@ class App {
     // update explosion effects
     this.updateExplosionEffects();
 
+    // update orbital objects
+    this.orbitalObjects.forEach(orbitalObject => {
+      this.propagateOrbit(orbitalObject, 0.02 * this.simSpeed);
+    });
+
     // update trajectory lines
     this.updateTrajectoryLines();
 
@@ -1112,18 +2288,31 @@ class App {
       if(altitude < this.atmosphereHeight && this.shouldBurnUp(meteor)) {
         if(!meteor.burning) {
           meteor.burning = true;
+          meteor.burnIntensity = 0;
           this.createBurnEffect(meteor);
+          this.createFireTrail(meteor);
         }
-        meteor.burnIntensity = Math.min(1, meteor.burnIntensity + 0.1 * this.simSpeed);
         
-        // Gradually reduce meteor size due to burning
-        const burnScale = 1 - (meteor.burnIntensity * 0.3);
-        meteor.mesh.scale.setScalar(meteor.mesh.scale.x * burnScale);
+        // Update fire trail
+        this.updateFireTrail(meteor);
         
-        // Random chance of complete burn-up
-        if(Math.random() < meteor.burnIntensity * 0.1 * this.simSpeed) {
+        meteor.burnIntensity = Math.min(1, meteor.burnIntensity + 0.05 * this.simSpeed);
+        
+        // Enhanced burning effects with terminal velocity consideration
+        const terminalVelocity = this.calculateTerminalVelocity(meteor, altitude);
+        const currentSpeed = meteor.physVelocity ? meteor.physVelocity.length() : meteor.velocity.length() * this.SCENE_SCALE;
+        
+        // More intense burning if significantly above terminal velocity
+        const speedRatio = currentSpeed / terminalVelocity;
+        const burnRate = Math.min(1, speedRatio * 0.1 * this.simSpeed);
+        
+        // Random chance of complete burn-up based on burn intensity and speed
+        if(Math.random() < meteor.burnIntensity * burnRate) {
           meteor.active = false;
           this.scene.remove(meteor.mesh);
+          if(meteor.fireTrail) {
+            this.scene.remove(meteor.fireTrail);
+          }
           if(meteor.label && meteor.label.element && meteor.label.element.parentNode) {
             meteor.label.element.parentNode.removeChild(meteor.label.element);
           }
@@ -1140,7 +2329,12 @@ class App {
         
         // Earth gravity force (Newton's law of universal gravitation)
         const rmag = posMeters.length();
-        const earthGravityForce = posMeters.clone().multiplyScalar(-this.G*this.earthMass/(rmag*rmag*rmag));
+        let earthGravityForce;
+        if (rmag > 0.1) { // Avoid division by zero
+          earthGravityForce = posMeters.clone().multiplyScalar(-this.G*this.earthMass/(rmag*rmag*rmag));
+        } else {
+          earthGravityForce = new THREE.Vector3(0, 0, 0);
+        }
         
         // Moon gravity force
         const moonGravityForce = this.calculateMoonGravity(meteor);
@@ -1156,6 +2350,9 @@ class App {
         // Atmospheric drag force
         const dragForce = this.calculateDragForce(meteor);
         
+        // Calculate mass reduction due to atmospheric ablation
+        const massLoss = this.calculateMassReduction(meteor, dt);
+        
         // Apply forces (F = ma, so a = F/m)
         const totalForce = earthGravityForce.add(moonGravityForce).add(meteorGravityForce).add(dragForce);
         const acceleration = totalForce.divideScalar(meteor.mass);
@@ -1166,7 +2363,12 @@ class App {
         if(meteor.label) meteor.label.position.copy(meteor.mesh.position);
       } else {
         // Enhanced simple mode physics with proper gravity
-        const gravityAccel = pos.clone().normalize().multiplyScalar(-this.gravityStrength/(r*r));
+        let gravityAccel;
+        if (r > 0.1) { // Avoid division by zero
+          gravityAccel = pos.clone().normalize().multiplyScalar(-this.gravityStrength/(r*r));
+        } else {
+          gravityAccel = new THREE.Vector3(0, 0, 0);
+        }
         
         // Add moon gravity in simple mode
         const moon = this.scene.getObjectByName('moon');
@@ -1205,10 +2407,22 @@ class App {
         try{
           let speedAtImpact = meteor.physVelocity ? meteor.physVelocity.length() : (meteor.velocity ? meteor.velocity.length()*this.SCENE_SCALE : 0);
           const ke = 0.5 * (meteor.mass || 1) * speedAtImpact * speedAtImpact;
-          this.createExplosion(pos.clone(), ke);
+          this.createExplosion(pos.clone(), ke, meteor.size);
           
           const keTons = ke / 4.184e9;
+          const blastRadius = this.calculateBlastRadius(ke);
           const ie = document.getElementById('impactEnergy'); if(ie) ie.innerText = `${ke.toExponential(3)} J (~${keTons.toFixed(2)} kt)`;
+          
+          // Add to Leaflet map
+          const latLon = this.positionToLatLon(pos);
+          this.addImpactToLeafletMap(latLon.lat, latLon.lon, ke, blastRadius);
+          
+          // Calculate earthquake effects
+          this.calculateEarthquakeEffects(latLon.lat, latLon.lon, ke);
+          
+          // Update map info
+          const blastRadiusEl = document.getElementById('blastRadius');
+          if (blastRadiusEl) blastRadiusEl.textContent = blastRadius.toFixed(1);
           
           // Update statistics
           this.totalImpactEnergy += ke;
@@ -1265,8 +2479,10 @@ class App {
     const steps = 2000;
     for(let i=0;i<steps;i++){
       const r = pos.length();
-      const accel = pos.clone().normalize().multiplyScalar(-this.gravityStrength/(r*r));
-      v.add(accel.multiplyScalar(dt));
+      if (r > 0.1) { // Avoid division by zero
+        const accel = pos.clone().normalize().multiplyScalar(-this.gravityStrength/(r*r));
+        v.add(accel.multiplyScalar(dt));
+      }
       pos.add(v.clone().multiplyScalar(dt));
       if(pos.length() < this.earthRadius + 0.2){ hitPos = pos.clone(); break; }
       if(pos.length() > 1e4) break;
@@ -1299,17 +2515,41 @@ class App {
       data.near_earth_objects.forEach(a=>{
         this.asteroidList = this.asteroidList || [];
         this.asteroidList.push(a);
-        
-        // Calculate mid-size for display
-        const minSize = a.estimated_diameter.meters.estimated_diameter_min;
-        const maxSize = a.estimated_diameter.meters.estimated_diameter_max;
-        const midSize = (minSize + maxSize) / 2;
-        
-        const option = document.createElement('option'); 
-        option.value = a.id; 
-        option.textContent = `${a.name} (${midSize.toFixed(0)} m mid-size)`; 
-        select.appendChild(option);
       });
+      
+      // Sort asteroids by average diameter (largest first) and update dropdown
+      if (!loadMore) {
+        this.asteroidList.sort((a, b) => {
+          const avgA = (a.estimated_diameter.meters.estimated_diameter_min + a.estimated_diameter.meters.estimated_diameter_max) / 2;
+          const avgB = (b.estimated_diameter.meters.estimated_diameter_min + b.estimated_diameter.meters.estimated_diameter_max) / 2;
+          return avgB - avgA;
+        });
+        
+        // Clear and repopulate dropdown with sorted list
+        select.innerHTML = '<option value="">Select an asteroid...</option>';
+        this.asteroidList.forEach(a => {
+          const minSize = a.estimated_diameter.meters.estimated_diameter_min;
+          const maxSize = a.estimated_diameter.meters.estimated_diameter_max;
+          const midSize = (minSize + maxSize) / 2;
+          
+          const option = document.createElement('option'); 
+          option.value = a.id; 
+          option.textContent = `${a.name} (${midSize.toFixed(0)}m avg)`; 
+          select.appendChild(option);
+        });
+      } else {
+        // For load more, just add new options
+        data.near_earth_objects.forEach(a=>{
+          const minSize = a.estimated_diameter.meters.estimated_diameter_min;
+          const maxSize = a.estimated_diameter.meters.estimated_diameter_max;
+          const midSize = (minSize + maxSize) / 2;
+          
+          const option = document.createElement('option'); 
+          option.value = a.id; 
+          option.textContent = `${a.name} (${midSize.toFixed(0)}m avg)`; 
+          select.appendChild(option);
+        });
+      }
       this.neoPage = (this.neoPage||0) + 1;
       document.getElementById('asteroidData').innerHTML = `Fetched ${this.asteroidList.length} asteroids (page ${this.neoPage})`;
     }catch(err){ console.error(err); alert('Error fetching asteroids'); }
@@ -1318,6 +2558,71 @@ class App {
   async fetchAsteroidDetails(id){
     const apiKey = document.getElementById('apiKey')?.value.trim(); if(!apiKey) return null;
     try{ const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${id}?api_key=${apiKey}`); return await res.json(); }catch(err){ console.error(err); return null; }
+  }
+
+  async selectAsteroid(){
+    const select = document.getElementById('asteroidSelect'); 
+    if(!select.value) return alert('Select an asteroid');
+    
+    const details = await this.fetchAsteroidDetails(select.value) || (this.asteroidList||[]).find(a=>a.id===select.value);
+    if(!details) return alert('Could not fetch asteroid details');
+    
+    // Calculate estimated impact energy with real density
+    const avgDiameter = (details.estimated_diameter.meters.estimated_diameter_min + details.estimated_diameter.meters.estimated_diameter_max) / 2;
+    const density = await this.getMeteorDensity(details.id);
+    const mass = (4/3) * Math.PI * Math.pow(avgDiameter / 2, 3) * density;
+    const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second) * 1000; // Convert to m/s
+    const kineticEnergy = 0.5 * mass * velocity * velocity;
+    const kilotons = kineticEnergy / 4.184e12;
+    const blastRadius = this.calculateBlastRadius(kineticEnergy);
+    
+    // Update UI with detailed information
+    document.getElementById('asteroidData').innerHTML = `
+      <b>${details.name}</b><br>
+      Min Diameter: ${details.estimated_diameter.meters.estimated_diameter_min.toFixed(1)} m<br>
+      Max Diameter: ${details.estimated_diameter.meters.estimated_diameter_max.toFixed(1)} m<br>
+      <b>Mid Diameter: ${avgDiameter.toFixed(1)} m</b><br>
+      Miss distance: ${parseFloat(details.close_approach_data[0].miss_distance.kilometers).toFixed(0)} km<br>
+      Velocity: ${parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second).toFixed(1)} km/s<br>
+      <b>Density: ${density.toFixed(0)} kg/m³</b><br>
+      Mass: ${(mass/1000).toFixed(1)} tons<br>
+      <hr style="margin: 8px 0; border: 1px solid #444;">
+      <b>Estimated Impact Energy: ${kilotons.toFixed(2)} kt</b><br>
+      <b>Estimated Blast Radius: ${blastRadius.toFixed(1)} km</b><br>
+      <b>Threat Level: ${this.getThreatLevel(kilotons)}</b>
+    `;
+    
+    console.log('Asteroid selected:', details.name);
+  }
+
+  // Get threat level based on energy
+  getThreatLevel(kilotons) {
+    if (kilotons < 0.1) return 'Minimal';
+    if (kilotons < 1) return 'Low';
+    if (kilotons < 10) return 'Moderate';
+    if (kilotons < 100) return 'High';
+    if (kilotons < 1000) return 'Extreme';
+    return 'Catastrophic';
+  }
+
+  // Create random orbital object
+  createRandomOrbit() {
+    const orbitalParams = {
+      semiMajorAxis: 500000 + Math.random() * 2000000, // 500km to 2.5Mm
+      eccentricity: Math.random() * 0.8, // 0 to 0.8
+      inclination: Math.random() * Math.PI, // 0 to 180 degrees
+      longitudeOfAscendingNode: Math.random() * 2 * Math.PI,
+      argumentOfPeriapsis: Math.random() * 2 * Math.PI,
+      meanAnomaly: Math.random() * 2 * Math.PI,
+      period: 1800 + Math.random() * 7200, // 30 minutes to 2 hours
+      color: new THREE.Color().setHSL(Math.random(), 0.8, 0.6).getHex(),
+      size: 500 + Math.random() * 1500 // 500m to 2km
+    };
+    
+    const orbitalObject = this.createOrbitalObject(orbitalParams);
+    console.log('Created orbital object with params:', orbitalParams);
+    
+    return orbitalObject;
   }
 
   async spawnSelectedAsteroid(){
@@ -1352,14 +2657,8 @@ class App {
       Mass: ${(mass/1000).toFixed(1)} tons
     `;
     
-    // Create meteor mesh
-    const meteorGeo = new THREE.SphereGeometry(1, 16, 16);
-    const meteorMat = new THREE.MeshStandardMaterial({ 
-      color: 0xaaaaaa, 
-      metalness: 0.1, 
-      roughness: 0.6 
-    });
-    const meteor = new THREE.Mesh(meteorGeo, meteorMat);
+    // Create randomized meteor mesh
+    const meteor = this.createRandomizedMeteor();
     
     // Position meteor closer to Earth (reduce approach distance by 90%)
     const approachMeters = (approach * 1000) * 0.1; // Much closer

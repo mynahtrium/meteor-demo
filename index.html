@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <title>Meteor Impact Simulation</title>
   <link rel="stylesheet" href="styles.css">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet JavaScript -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <!-- Camera Focus UI (Top Right) -->
@@ -27,14 +31,18 @@
     </div>
   </div>
 
-  <!-- 2D Map (Bottom Right) -->
+  <!-- Google Maps UI (Bottom Right) -->
   <div id="mapUI">
-    <h3>Impact Map</h3>
-    <canvas id="impactMap" width="300" height="200"></canvas>
+    <div class="map-header">
+      <h3>Impact Map</h3>
+      <button id="toggleMapSize" class="map-toggle">Expand</button>
+    </div>
+    <div id="googleMap" class="map-container"></div>
     <div id="mapInfo">
       <div>Lat: <span id="impactLat">-</span>°</div>
       <div>Lon: <span id="impactLon">-</span>°</div>
       <div>Energy: <span id="mapEnergy">-</span> kt</div>
+      <div>Blast Radius: <span id="blastRadius">-</span> km</div>
     </div>
   </div>
 
@@ -65,8 +73,11 @@
 
   <!-- Keyboard Shortcuts Help (Top Right) -->
   <div id="helpUI">
-    <h3>Keyboard Shortcuts</h3>
-    <div id="shortcuts">
+    <div class="help-header">
+      <h3>Keyboard Shortcuts</h3>
+      <button id="toggleHelp" class="help-toggle">Collapse</button>
+    </div>
+    <div id="shortcuts" class="shortcuts-content">
       <div><kbd>Space</kbd> - Fire Meteor</div>
       <div><kbd>R</kbd> - Reset Scene</div>
       <div><kbd>P</kbd> - Pause/Resume</div>
@@ -119,7 +130,8 @@
 
     <label>Select Asteroid:</label>
     <select id="asteroidSelect"></select>
-    <button id="spawnAsteroid">Spawn Selected Asteroid</button>
+    <button id="selectAsteroid">Select Asteroid</button>
+    <button id="createOrbit">Create Orbital Object</button>
 
   <label>Physics</label>
   <button id="toggleRealism">Enable Realistic Physics</button>
