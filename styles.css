@@ -1,5 +1,5 @@
 #app-root { height: 100vh; width: 100vw; overflow: hidden; }
-body { margin: 0; font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background: #0b1020; color: #e6eef8; }
+body { margin: 0; font-family: Tahoma, 'Segoe UI', Arial, sans-serif; background: linear-gradient(#cfe6ff,#9fc4ff); color: #000; cursor: url('winxp_cursor.cur'), auto; }
 canvas { display:block; }
 
 /* Camera Focus UI (Top Right) */
@@ -242,23 +242,25 @@ kbd {
   position: absolute;
   top: 18px;
   left: 18px;
-  width: 300px;
+  width: 320px;
   max-height: calc(100vh - 36px);
-  background: linear-gradient(180deg, rgba(20,24,36,0.9), rgba(12,14,22,0.85));
-  color: #e6eef8;
-  padding: 16px;
+  background: linear-gradient(#0b0b0b,#171717); /* black/dark */
+  color: #e6e6e6;
+  padding: 12px;
   box-sizing: border-box;
   overflow-y: auto;
-  z-index: 20;
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
-  backdrop-filter: blur(6px) saturate(120%);
+  z-index: 30;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.03);
 }
+/* UI title bar */
+.ui-title{ background:linear-gradient(#0a4a97,#063a78); color:#fff; padding:8px 10px; font-weight:700; border-radius:4px; margin-bottom:10px; }
 
 #ui label { display: block; margin: 10px 0 6px; font-weight: 600; color: #cfe6ff; font-size: 13px; }
-#ui input, #ui select, #ui button, #ui .small { width: 100%; margin-bottom: 10px; padding: 8px; border-radius: 8px; border: none; box-sizing: border-box; }
-#ui input, #ui select { background: rgba(255,255,255,0.04); color: #e6eef8; }
-#ui button { background: linear-gradient(180deg,#3a4a76,#2b3456); color: white; cursor: pointer; font-weight: 600; }
+#ui input, #ui select, #ui button, #ui .small { width: 100%; margin-bottom: 10px; padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04); box-sizing: border-box; }
+#ui input, #ui select { background: rgba(255,255,255,0.04); color: #e6e6e6; }
+#ui button { background: linear-gradient(180deg,#2b2b2b,#111); color: #e6e6e6; cursor: pointer; font-weight: 600; border:1px solid rgba(255,255,255,0.04); }
 #ui button:hover { filter: brightness(1.08); }
 
 .small { font-size: 12px; color: #b9cfe6; margin-bottom: 8px; }
@@ -272,3 +274,33 @@ kbd {
 @media (max-width: 800px){
   #ui{ width: 260px; left: 10px; top: 10px; }
 }
+
+/* Win98 taskbar */
+#win98-taskbar{
+  position:fixed; left:0; right:0; bottom:0; height:40px; background:linear-gradient(#cfe6ff,#8fb9ff); display:flex; align-items:center; gap:8px; padding:4px 8px; box-shadow:0 -2px 6px rgba(0,0,0,0.15); z-index:40; border-top:2px solid rgba(255,255,255,0.3);
+}
+/* Start orb */
+#start-button{ display:flex; align-items:center; gap:8px; padding:4px 10px; background:linear-gradient(#e5f3ff,#cfe6ff); border:1px solid #6a8fb3; box-shadow: inset 0 1px rgba(255,255,255,0.6); border-radius:4px; font-weight:700; }
+#start-button::before{ content:''; width:18px; height:18px; background:radial-gradient(circle at 30% 30%, #fff, #f0f0f0 20%, #ff0 45%, #d00 55%, #700 70%); border-radius:50%; display:inline-block; }
+#win98-taskbar button{ background:linear-gradient(#f8fbff,#e7f2ff); border:1px solid #6a8fb3; padding:6px 10px; cursor:pointer; box-shadow: inset 0 1px rgba(255,255,255,0.6); border-radius:3px; }
+#taskbar-buttons{ margin-left:8px; display:flex; gap:6px; }
+#taskbar-buttons button#open-options{ background:linear-gradient(#f8fbff,#e7f2ff); border:1px solid #6a8fb3; padding:6px 10px; cursor:pointer; box-shadow: inset 0 1px rgba(255,255,255,0.6); border-radius:3px; }
+#taskbar-tray{ margin-left:auto; color:#022; font-size:12px; opacity:0.95 }
+
+/* Simple editor window */
+.window{ width:560px; height:360px; position:fixed; left:80px; top:60px; background:#e9f4ff; border:2px solid #5c7fa0; box-shadow: 6px 10px 20px rgba(0,0,0,0.25); z-index:200; display:flex; flex-direction:column; }
+.window.hidden{ display:none; }
+.titlebar{ background:linear-gradient(#0b60b0,#084a86); color:#fff; padding:6px 8px; display:flex; align-items:center; justify-content:space-between; font-weight:700; font-family: Tahoma, Geneva, sans-serif; border-bottom:2px solid rgba(255,255,255,0.12); }
+.titlebar .title{ padding-left:6px; }
+.titlebar .title-buttons button{ margin-left:6px; padding:2px 6px; background:linear-gradient(#fff,#dfefff); border:1px solid #6a8fb3; cursor:pointer; }
+.window-body{ padding:8px; background:#fff; flex:1; }
+.window .controls, .window .toolbar{ display:flex; gap:6px; align-items:center; }
+#editor-content{ width:100%; height:100%; box-sizing:border-box; resize:none; font-family: Tahoma, 'Courier New', monospace; font-size:13px; padding:8px; border:1px solid #c0d8f0; background:#fffdf6; }
+
+/* small variant for impact window and position at top-right */
+.window.small{ width:320px; height:320px; right:18px; top:18px; left:auto; }
+.window.small .window-body{ padding:6px; background:transparent; }
+
+/* Options app specific tweaks */
+#options-app{ width:320px; left:80px; top:120px; }
+#options-app .window-body label{ display:block; margin:6px 0; }
