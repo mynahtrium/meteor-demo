@@ -9,15 +9,7 @@
   <!-- Camera Focus UI (Top Right) -->
   <div id="cameraFocusUI">
     <h3>Camera Focus</h3>
-    <button id="focusSun">Focus Sun</button>
-    <button id="focusMercury">Focus Mercury</button>
-    <button id="focusVenus">Focus Venus</button>
     <button id="focusEarth">Focus Earth</button>
-    <button id="focusMars">Focus Mars</button>
-    <button id="focusJupiter">Focus Jupiter</button>
-    <button id="focusSaturn">Focus Saturn</button>
-    <button id="focusUranus">Focus Uranus</button>
-    <button id="focusNeptune">Focus Neptune</button>
     <button id="focusMoon">Focus Moon</button>
     <button id="focusMeteor">Focus Last Meteor</button>
     <button id="focusFree">Free Camera</button>
@@ -35,7 +27,18 @@
     </div>
   </div>
 
-  <!-- Statistics UI (Bottom Right) -->
+  <!-- 2D Map (Bottom Right) -->
+  <div id="mapUI">
+    <h3>Impact Map</h3>
+    <canvas id="impactMap" width="300" height="200"></canvas>
+    <div id="mapInfo">
+      <div>Lat: <span id="impactLat">-</span>°</div>
+      <div>Lon: <span id="impactLon">-</span>°</div>
+      <div>Energy: <span id="mapEnergy">-</span> kt</div>
+    </div>
+  </div>
+
+  <!-- Statistics UI (Bottom Left) -->
   <div id="statisticsUI">
     <h3>Simulation Statistics</h3>
     <div id="simulationStats">
@@ -72,7 +75,6 @@
       <div><kbd>T</kbd> - Focus Meteor</div>
       <div><kbd>F</kbd> - Free Camera</div>
       <div><kbd>G</kbd> - Toggle Gravity</div>
-      <div><kbd>X</kbd> - Toggle Explosions</div>
     </div>
   </div>
 
@@ -123,8 +125,7 @@
   <button id="toggleRealism">Enable Realistic Physics</button>
   <button id="toggleAtmosphere">Show Atmosphere</button>
   <button id="toggleMoon">Show Moon</button>
-  <button id="toggleGravityViz">Show Gravity Fields</button>
-  <button id="toggleExplosions">Enable Explosions</button>
+    <button id="toggleGravityViz">Show Gravity Fields</button>
   <button id="highResTex">Load High-res Earth Texture</button>
   <label style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
   <input type="file" id="uploadTex" accept="image/*" autocomplete="off">

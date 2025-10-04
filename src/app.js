@@ -40,6 +40,11 @@ class App {
     this.frameCount = 0;
     this.lastFpsTime = Date.now();
     this.currentFps = 60;
+    
+    // Map tracking
+    this.impactLocations = [];
+    this.mapCanvas = null;
+    this.mapCtx = null;
 
     // physics
     this.G = 6.67430e-11;
@@ -57,88 +62,23 @@ class App {
     this.moonOrbitalSpeed = 1022 / this.SCENE_SCALE; // m/s converted to scene units
     this.moonAngle = 0; // current orbital angle
 
-    // Solar System properties
-    this.solarSystem = {
-      sun: {
-        name: 'Sun',
-        mass: 1.989e30, // kg
-        radius: 696340000, // meters
-        distance: 0, // at center
-        orbitalSpeed: 0,
-        angle: 0,
-        color: 0xffaa00
-      },
-      mercury: {
-        name: 'Mercury',
-        mass: 3.301e23,
-        radius: 2439700,
-        distance: 57909000000 / this.SCENE_SCALE, // 57.9 million km
-        orbitalSpeed: 0.0000008,
-        angle: 0,
-        color: 0x8c7853
-      },
-      venus: {
-        name: 'Venus',
-        mass: 4.867e24,
-        radius: 6051800,
-        distance: 108200000000 / this.SCENE_SCALE, // 108.2 million km
-        orbitalSpeed: 0.0000006,
-        angle: 0,
-        color: 0xffc649
-      },
+    // Earth-Moon system only
+    this.earthMoonSystem = {
       earth: {
         name: 'Earth',
-        mass: 5.972e24,
-        radius: 6371000,
-        distance: 149600000000 / this.SCENE_SCALE, // 149.6 million km
-        orbitalSpeed: 0.0000005,
-        angle: 0,
+        mass: 5.972e24, // kg
+        radius: 6371000, // meters
+        position: new THREE.Vector3(0, 0, 0),
         color: 0x6b93d6
       },
-      mars: {
-        name: 'Mars',
-        mass: 6.39e23,
-        radius: 3389500,
-        distance: 227900000000 / this.SCENE_SCALE, // 227.9 million km
-        orbitalSpeed: 0.0000004,
+      moon: {
+        name: 'Moon',
+        mass: 7.342e22, // kg
+        radius: 1737400, // meters
+        distance: 384400000 / this.SCENE_SCALE, // 384,400 km in scene units
+        orbitalSpeed: 0.000001, // radians per frame
         angle: 0,
-        color: 0xc1440e
-      },
-      jupiter: {
-        name: 'Jupiter',
-        mass: 1.898e27,
-        radius: 69911000,
-        distance: 778500000000 / this.SCENE_SCALE, // 778.5 million km
-        orbitalSpeed: 0.0000002,
-        angle: 0,
-        color: 0xd8ca9d
-      },
-      saturn: {
-        name: 'Saturn',
-        mass: 5.683e26,
-        radius: 58232000,
-        distance: 1432000000000 / this.SCENE_SCALE, // 1.432 billion km
-        orbitalSpeed: 0.0000001,
-        angle: 0,
-        color: 0xfad5a5
-      },
-      uranus: {
-        name: 'Uranus',
-        mass: 8.681e25,
-        radius: 25362000,
-        distance: 2867000000000 / this.SCENE_SCALE, // 2.867 billion km
-        orbitalSpeed: 0.00000005,
-        angle: 0,
-        color: 0x4fd0e7
-      },
-      neptune: {
-        name: 'Neptune',
-        mass: 1.024e26,
-        radius: 24622000,
-        distance: 4515000000000 / this.SCENE_SCALE, // 4.515 billion km
-        orbitalSpeed: 0.00000003,
-        angle: 0,
-        color: 0x4b70dd
+        color: 0xcccccc
       }
     };
 
@@ -241,8 +181,7 @@ class App {
     this.scene.add(moon);
     this.createLabel('Moon', new THREE.Vector3(this.moonDistance + this.moonRadius + 0.2, 0, 0));
 
-    // Create solar system
-    this.createSolarSystem();
+    // Earth-Moon system is already created above
 
   // Lighting: ambient + hemisphere + directional (sun) — but we do not add a visible Sun mesh
   this.scene.add(new THREE.AmbientLight(0xffffff, 0.28));
@@ -316,19 +255,10 @@ class App {
     const atmBtn = el('toggleAtmosphere'); if(atmBtn) atmBtn.onclick = (e)=>{ this.showAtmosphere = !this.showAtmosphere; e.target.innerText = this.showAtmosphere? 'Hide Atmosphere' : 'Show Atmosphere'; const atm = this.scene.getObjectByName('atmosphere'); if(atm) atm.visible = this.showAtmosphere; };
     const moonBtn = el('toggleMoon'); if(moonBtn) moonBtn.onclick = (e)=>{ this.showMoon = !this.showMoon; e.target.innerText = this.showMoon? 'Hide Moon' : 'Show Moon'; const moon = this.scene.getObjectByName('moon'); if(moon) moon.visible = this.showMoon; };
     const gravityBtn = el('toggleGravityViz'); if(gravityBtn) gravityBtn.onclick = (e)=>{ this.showGravityViz = !this.showGravityViz; e.target.innerText = this.showGravityViz? 'Hide Gravity Fields' : 'Show Gravity Fields'; this.toggleGravityVisualizers(); };
-    const explosionBtn = el('toggleExplosions'); if(explosionBtn) explosionBtn.onclick = (e)=>{ this.enableExplosions = !this.enableExplosions; e.target.innerText = this.enableExplosions? 'Disable Explosions' : 'Enable Explosions'; };
     if (el('spawnAsteroid')) el('spawnAsteroid').onclick = () => this.spawnSelectedAsteroid();
     
     // Camera focus buttons
-    if (el('focusSun')) el('focusSun').onclick = () => this.focusOnPlanet('sun');
-    if (el('focusMercury')) el('focusMercury').onclick = () => this.focusOnPlanet('mercury');
-    if (el('focusVenus')) el('focusVenus').onclick = () => this.focusOnPlanet('venus');
     if (el('focusEarth')) el('focusEarth').onclick = () => this.focusOnEarth();
-    if (el('focusMars')) el('focusMars').onclick = () => this.focusOnPlanet('mars');
-    if (el('focusJupiter')) el('focusJupiter').onclick = () => this.focusOnPlanet('jupiter');
-    if (el('focusSaturn')) el('focusSaturn').onclick = () => this.focusOnPlanet('saturn');
-    if (el('focusUranus')) el('focusUranus').onclick = () => this.focusOnPlanet('uranus');
-    if (el('focusNeptune')) el('focusNeptune').onclick = () => this.focusOnPlanet('neptune');
     if (el('focusMoon')) el('focusMoon').onclick = () => this.focusOnMoon();
     if (el('focusMeteor')) el('focusMeteor').onclick = () => this.focusOnLastMeteor();
     if (el('focusFree')) el('focusFree').onclick = () => this.setFreeCamera();
@@ -338,6 +268,9 @@ class App {
 
     // attempt to auto-load a local earth texture file if present (project root: earth_texture.jpg)
     try { this.tryLoadLocalEarthTexture(); } catch(e){ /* ignore */ }
+    
+    // Initialize map
+    this.initMap();
   }
 
   tryLoadLocalEarthTexture(){
@@ -432,11 +365,6 @@ class App {
       const gravityBtn = document.getElementById('toggleGravityViz');
       if (gravityBtn) gravityBtn.innerText = this.showGravityViz ? 'Hide Gravity Fields' : 'Show Gravity Fields';
       this.toggleGravityVisualizers();
-    } else if(event.code === 'KeyX') {
-      // X key to toggle explosions
-      this.enableExplosions = !this.enableExplosions;
-      const explosionBtn = document.getElementById('toggleExplosions');
-      if (explosionBtn) explosionBtn.innerText = this.enableExplosions ? 'Disable Explosions' : 'Enable Explosions';
     }
   }
 
@@ -480,27 +408,6 @@ class App {
     this.focusedMeteor = null;
   }
 
-  // Focus camera on a planet
-  focusOnPlanet(planetKey) {
-    const planet = this.solarSystem[planetKey];
-    if (!planet) return;
-    
-    this.cameraFocus = planetKey;
-    this.focusedMeteor = null;
-    
-    const planetPos = new THREE.Vector3(0, 0, 0);
-    if (planetKey !== 'sun') {
-      const x = Math.cos(planet.angle) * planet.distance;
-      const z = Math.sin(planet.angle) * planet.distance;
-      planetPos.set(x, 0, z);
-    }
-    
-    const radius = planet.radius / this.SCENE_SCALE;
-    const cameraDistance = Math.max(radius * 5, this.earthRadius * 0.5);
-    const cameraPos = planetPos.clone().add(new THREE.Vector3(0, 0, cameraDistance));
-    
-    this.frameCameraTo(planetPos, cameraPos, 1500);
-  }
 
   // Update camera focus
   updateCameraFocus() {
@@ -536,26 +443,6 @@ class App {
     } else if (this.cameraFocus === 'meteor' && (!this.focusedMeteor || !this.focusedMeteor.active)) {
       // If focused meteor is no longer active, switch to free camera
       this.setFreeCamera();
-    } else if (this.solarSystem[this.cameraFocus]) {
-      // Handle planet focus
-      const planet = this.solarSystem[this.cameraFocus];
-      const planetPos = new THREE.Vector3(0, 0, 0);
-      if (this.cameraFocus !== 'sun') {
-        const x = Math.cos(planet.angle) * planet.distance;
-        const z = Math.sin(planet.angle) * planet.distance;
-        planetPos.set(x, 0, z);
-      }
-      
-      const radius = planet.radius / this.SCENE_SCALE;
-      const cameraDistance = Math.max(radius * 5, this.earthRadius * 0.5);
-      
-      // Calculate camera position relative to planet, maintaining current offset
-      const currentOffset = this.camera.position.clone().sub(planetPos);
-      const targetOffset = currentOffset.normalize().multiplyScalar(cameraDistance);
-      const cameraPos = planetPos.clone().add(targetOffset);
-      
-      this.camera.position.lerp(cameraPos, 0.05);
-      this.controls.target.lerp(planetPos, 0.05);
     }
   }
 
@@ -580,62 +467,6 @@ class App {
     }
   }
 
-  // Create solar system
-  createSolarSystem() {
-    Object.keys(this.solarSystem).forEach(planetKey => {
-      const planet = this.solarSystem[planetKey];
-      if (planetKey === 'earth') return; // Skip Earth as it's already created
-      
-      const radius = planet.radius / this.SCENE_SCALE;
-      const geo = new THREE.SphereGeometry(radius, 32, 32);
-      const mat = new THREE.MeshPhongMaterial({ 
-        color: planet.color, 
-        shininess: 30,
-        specular: 0x222222
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      
-      // Position planet in orbit
-      const x = Math.cos(planet.angle) * planet.distance;
-      const z = Math.sin(planet.angle) * planet.distance;
-      mesh.position.set(x, 0, z);
-      mesh.name = planetKey;
-      
-      this.scene.add(mesh);
-      
-      // Create label
-      const labelPos = new THREE.Vector3(x + radius + 0.5, 0, z);
-      this.createLabel(planet.name, labelPos);
-    });
-  }
-
-  // Update solar system orbital positions
-  updateSolarSystem() {
-    Object.keys(this.solarSystem).forEach(planetKey => {
-      const planet = this.solarSystem[planetKey];
-      if (planetKey === 'earth' || planetKey === 'sun') return; // Skip Earth and Sun
-      
-      const mesh = this.scene.getObjectByName(planetKey);
-      if (!mesh) return;
-      
-      // Update orbital angle
-      planet.angle += planet.orbitalSpeed * this.simSpeed * 0.02;
-      if (planet.angle > Math.PI * 2) planet.angle -= Math.PI * 2;
-      
-      // Calculate new position
-      const x = Math.cos(planet.angle) * planet.distance;
-      const z = Math.sin(planet.angle) * planet.distance;
-      mesh.position.set(x, 0, z);
-      
-      // Update label position
-      const radius = planet.radius / this.SCENE_SCALE;
-      const labelPos = new THREE.Vector3(x + radius + 0.5, 0, z);
-      const label = this.labels.find(l => l.element.innerText.includes(planet.name));
-      if (label) {
-        label.position.copy(labelPos);
-      }
-    });
-  }
 
   // Calculate gravitational force from moon
   calculateMoonGravity(meteor) {
@@ -650,6 +481,20 @@ class App {
     
     const force = this.G * this.moonMass * meteor.mass / (distance * distance);
     const direction = moonPos.sub(meteorPos).normalize();
+    
+    return direction.multiplyScalar(force);
+  }
+
+  // Calculate gravitational force from Earth
+  calculateEarthGravity(meteor) {
+    const earthPos = new THREE.Vector3(0, 0, 0);
+    const meteorPos = meteor.mesh.position.clone().multiplyScalar(this.SCENE_SCALE);
+    const distance = meteorPos.length();
+    
+    if (distance < 1) return new THREE.Vector3(); // Avoid division by zero
+    
+    const force = this.G * this.earthMass * meteor.mass / (distance * distance);
+    const direction = earthPos.sub(meteorPos).normalize();
     
     return direction.multiplyScalar(force);
   }
@@ -756,71 +601,19 @@ class App {
     });
   }
 
-  // Create explosion effect
+  // Create simple explosion effect
   createExplosion(position, energy) {
     if (!this.enableExplosions) return;
     
-    const explosionRadius = Math.min(Math.pow(energy / 1e6, 0.33) * 10, 50); // Scale based on energy
-    const particleCount = Math.min(Math.floor(energy / 1e5), 100);
+    // Add to impact map
+    this.addImpactToMap(position, energy);
     
-    const explosionGroup = new THREE.Group();
-    explosionGroup.position.copy(position);
-    
-    // Create explosion particles
-    for (let i = 0; i < particleCount; i++) {
-      const particleGeo = new THREE.SphereGeometry(0.1, 4, 4);
-      const particleMat = new THREE.MeshBasicMaterial({ 
-        color: new THREE.Color().setHSL(Math.random() * 0.1, 1, 0.5),
-        transparent: true,
-        opacity: 1
-      });
-      const particle = new THREE.Mesh(particleGeo, particleMat);
-      
-      // Random direction and speed
-      const direction = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2
-      ).normalize();
-      
-      const speed = Math.random() * explosionRadius * 0.1;
-      particle.userData = {
-        velocity: direction.multiplyScalar(speed),
-        lifetime: 1.0,
-        maxLifetime: 1.0
-      };
-      
-      explosionGroup.add(particle);
-    }
-    
-    this.scene.add(explosionGroup);
-    this.explosionEffects.push({ group: explosionGroup, lifetime: 2.0 });
-    
-    // Create shockwave effect
-    this.createShockwave(position, explosionRadius);
+    // Log explosion data
+    const kilotons = energy / 4.184e12;
+    console.log(`Impact: ${kilotons.toFixed(2)} kt`);
   }
 
-  // Create shockwave effect
-  createShockwave(position, radius) {
-    const shockwaveGeo = new THREE.RingGeometry(0.1, 0.2, 32);
-    const shockwaveMat = new THREE.MeshBasicMaterial({ 
-      color: 0xffffff, 
-      transparent: true, 
-      opacity: 0.8,
-      side: THREE.DoubleSide
-    });
-    const shockwave = new THREE.Mesh(shockwaveGeo, shockwaveMat);
-    shockwave.position.copy(position);
-    shockwave.lookAt(this.camera.position);
-    
-    this.scene.add(shockwave);
-    this.impactEffects.push({ 
-      mesh: shockwave, 
-      type: 'shockwave',
-      lifetime: 1.0,
-      maxRadius: radius * 2
-    });
-  }
+
 
   // Update explosion effects
   updateExplosionEffects() {
@@ -864,6 +657,13 @@ class App {
       if (moon) {
         this.createGravityVisualizer(moon, this.moonMass, 0x0088ff);
       }
+      
+      // Add gravity visualizers for all meteors
+      this.meteors.forEach(meteor => {
+        if (meteor.active) {
+          this.createGravityVisualizer(meteor.mesh, meteor.mass, 0xff8800);
+        }
+      });
     } else {
       // Remove all gravity visualizers
       this.gravityVisualizers.forEach(viz => {
@@ -1086,6 +886,103 @@ class App {
     if (status) status.innerText = this.lastMeteorData.active ? 'Active' : 'Impacted';
   }
 
+  // Initialize map
+  initMap() {
+    this.mapCanvas = document.getElementById('impactMap');
+    if (this.mapCanvas) {
+      this.mapCtx = this.mapCanvas.getContext('2d');
+      this.drawMap();
+    }
+  }
+
+  // Convert 3D position to latitude/longitude
+  positionToLatLon(position) {
+    const x = position.x;
+    const y = position.y;
+    const z = position.z;
+    
+    // Convert to spherical coordinates
+    const lat = Math.asin(y / Math.sqrt(x*x + y*y + z*z)) * 180 / Math.PI;
+    const lon = Math.atan2(z, x) * 180 / Math.PI;
+    
+    return { lat: lat, lon: lon };
+  }
+
+  // Convert latitude/longitude to map coordinates
+  latLonToMapCoords(lat, lon, canvasWidth, canvasHeight) {
+    const x = (lon + 180) / 360 * canvasWidth;
+    const y = (90 - lat) / 180 * canvasHeight;
+    return { x: x, y: y };
+  }
+
+  // Draw the impact map
+  drawMap() {
+    if (!this.mapCtx) return;
+    
+    const canvas = this.mapCanvas;
+    const ctx = this.mapCtx;
+    
+    // Clear canvas
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw Earth outline
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, canvas.height / 2, Math.min(canvas.width, canvas.height) / 2 - 10, 0, 2 * Math.PI);
+    ctx.stroke();
+    
+    // Draw impact locations
+    this.impactLocations.forEach(impact => {
+      const coords = this.latLonToMapCoords(impact.lat, impact.lon, canvas.width, canvas.height);
+      
+      // Size based on energy (kilotons)
+      const size = Math.max(2, Math.min(20, Math.log10(impact.energy / 4.184e12 + 1) * 3));
+      
+      // Color based on energy
+      const intensity = Math.min(1, Math.log10(impact.energy / 4.184e12 + 1) / 3);
+      const red = Math.floor(255 * intensity);
+      const green = Math.floor(255 * (1 - intensity));
+      
+      ctx.fillStyle = `rgb(${red}, ${green}, 0)`;
+      ctx.beginPath();
+      ctx.arc(coords.x, coords.y, size, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      // Draw ring for larger impacts
+      if (impact.energy / 4.184e12 > 1) {
+        ctx.strokeStyle = `rgb(${red}, ${green}, 0)`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(coords.x, coords.y, size * 2, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+    });
+  }
+
+  // Add impact to map
+  addImpactToMap(position, energy) {
+    const latLon = this.positionToLatLon(position);
+    this.impactLocations.push({
+      lat: latLon.lat,
+      lon: latLon.lon,
+      energy: energy,
+      time: Date.now()
+    });
+    
+    // Update map info
+    const latEl = document.getElementById('impactLat');
+    const lonEl = document.getElementById('impactLon');
+    const energyEl = document.getElementById('mapEnergy');
+    
+    if (latEl) latEl.textContent = latLon.lat.toFixed(2);
+    if (lonEl) lonEl.textContent = latLon.lon.toFixed(2);
+    if (energyEl) energyEl.textContent = (energy / 4.184e12).toFixed(2);
+    
+    this.drawMap();
+  }
+
   // Update statistics UI
   updateStatistics() {
     // FPS calculation
@@ -1179,9 +1076,6 @@ class App {
     
     // update moon orbit
     this.updateMoon();
-
-    // update solar system orbits
-    this.updateSolarSystem();
 
     // update camera focus
     this.updateCameraFocus();
@@ -1340,14 +1234,6 @@ class App {
         if (effect.lifetime <= 0) {
           this.scene.remove(effect.mesh);
         }
-      } else if (effect.type === 'shockwave') {
-        effect.lifetime -= 0.02 * this.simSpeed;
-        const scale = 1 + (1 - effect.lifetime) * 10; // Expand over time
-        effect.mesh.scale.setScalar(scale);
-        effect.mesh.material.opacity = effect.lifetime * 0.8;
-        if (effect.lifetime <= 0) {
-          this.scene.remove(effect.mesh);
-        }
       } else {
         effect.mesh.scale.addScalar(0.05 * this.simSpeed);
         effect.mesh.material.opacity -= 0.02 * this.simSpeed;
@@ -1357,7 +1243,7 @@ class App {
       }
     });
     this.impactEffects = this.impactEffects.filter(e => 
-      e.mesh.material.opacity > 0 && (e.type !== 'burn' || e.lifetime > 0) && (e.type !== 'shockwave' || e.lifetime > 0)
+      e.mesh.material.opacity > 0 && (e.type !== 'burn' || e.lifetime > 0)
     );
 
     this.meteors = this.meteors.filter(m=>m.active);
