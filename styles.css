@@ -507,6 +507,8 @@ canvas {
   gap: 2px;
   font-size: 10px;
   color: #b9cfe6;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 #mapInfo div {
