@@ -6,7 +6,7 @@
   "scripts": {
     "start": "vite",
     "start:open": "vite --open",
-  "changelog:append": "node scripts/append-changelog.js",
+    "changelog:append": "node scripts/append-changelog.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

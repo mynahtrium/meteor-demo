@@ -990,11 +990,12 @@ class App {
     this.predictedImpactMarker.visible = false;
     this.scene.add(this.predictedImpactMarker);
 
-    // mouse-follow cursor
+    // mouse-follow cursor (hidden)
     const mcGeo = new THREE.SphereGeometry(0.03, 8, 8);
     const mcMat = new THREE.MeshBasicMaterial({ color: 0xffff66 });
     const mouseCursor = new THREE.Mesh(mcGeo, mcMat);
     mouseCursor.name = 'mouseCursor';
+    mouseCursor.visible = false; // Hide the cursor
     this.scene.add(mouseCursor);
 
     // events
@@ -1010,7 +1011,6 @@ class App {
     if (el('speedInput')) el('speedInput').oninput = (e) => { const speed = Math.max(0.01, Math.min(10, parseFloat(e.target.value) || 0.05)); if (el('speed')) el('speed').value = speed; if (el('speedVal')) el('speedVal').innerText = speed.toFixed(2); };
     if (el('reset')) el('reset').onclick = () => this.resetScene();
     if (el('pause')) el('pause').onclick = (e) => { this.paused = !this.paused; e.target.innerText = this.paused ? 'Resume' : 'Pause'; };
-    if (el('toggleAiming')) el('toggleAiming').onclick = (e) => { this.showAiming = !this.showAiming; e.target.innerText = this.showAiming ? 'Hide Aiming' : 'Show Aiming'; const aim = this.scene.getObjectByName('aimingLine'); if (aim) aim.visible = this.showAiming; };
     if (el('fire')) el('fire').onclick = () => this.shootMeteor();
     if (el('fetch')) el('fetch').onclick = () => this.fetchAsteroidList(false);
     if (el('loadMore')) el('loadMore').onclick = () => this.fetchAsteroidList(true);
@@ -1023,7 +1023,6 @@ class App {
     const gravityBtn = el('toggleGravityViz'); if(gravityBtn) gravityBtn.onclick = (e)=>{ this.showGravityViz = !this.showGravityViz; e.target.innerText = this.showGravityViz? 'Hide Gravity Fields' : 'Show Gravity Fields'; this.toggleGravityVisualizers(); };
     if (el('selectAsteroid')) el('selectAsteroid').onclick = () => this.selectAsteroid();
     if (el('toggleMapSize')) el('toggleMapSize').onclick = () => this.toggleMapSize();
-    if (el('createOrbit')) el('createOrbit').onclick = () => this.createRandomOrbit();
     
     // Camera focus buttons
     if (el('focusEarth')) el('focusEarth').onclick = () => this.focusOnEarth();
@@ -2271,27 +2270,56 @@ class App {
     });
   }
 
-  // Get meteor density from NASA NEO API
+  // Get meteor density from NASA NEO API (legacy method - kept for compatibility)
   async getMeteorDensity(asteroidId) {
     try {
       const apiKey = document.getElementById('apiKey')?.value.trim();
-      if (!apiKey) return 3000; // Default density in kg/m³
+      if (!apiKey) return 1600; // More realistic default density for asteroids
       
       const response = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${asteroidId}?api_key=${apiKey}`);
       const data = await response.json();
       
-      // Extract density from NASA data if available
-      if (data.orbital_data && data.orbital_data.density) {
-        return parseFloat(data.orbital_data.density) * 1000; // Convert g/cm³ to kg/m³
-      }
-      
-      // Estimate density based on asteroid type
-      const spectralType = data.orbital_data?.spectral_type || 'Unknown';
-      return this.estimateDensityFromType(spectralType);
+      return this.getMeteorDensityFromDetails(data);
       
     } catch (error) {
       console.warn('Could not fetch meteor density from NASA API:', error);
-      return 3000; // Default density
+      return 1600; // More realistic default density for asteroids
+    }
+  }
+
+  // Get meteor density from already-fetched asteroid details
+  getMeteorDensityFromDetails(details) {
+    try {
+      console.log('Extracting density from asteroid details:', details.name);
+      
+      // Check for density in various possible locations in the NASA API response
+      if (details.orbital_data && details.orbital_data.density) {
+        const density = parseFloat(details.orbital_data.density) * 1000; // Convert g/cm³ to kg/m³
+        console.log('Found NASA density data:', density, 'kg/m³');
+        return density;
+      }
+      
+      if (details.orbital_data && details.orbital_data.bulk_density) {
+        const density = parseFloat(details.orbital_data.bulk_density) * 1000; // Convert g/cm³ to kg/m³
+        console.log('Found NASA bulk_density data:', density, 'kg/m³');
+        return density;
+      }
+      
+      // Check for spectral type in various possible locations
+      const spectralType = details.orbital_data?.spectral_type || 
+                          details.orbital_data?.spectral_class || 
+                          details.spectral_type || 
+                          details.spectral_class ||
+                          'Unknown';
+      
+      // Use more realistic default density for asteroids (1600 kg/m³)
+      const estimatedDensity = this.estimateDensityFromType(spectralType);
+      console.log('NASA API does not provide density data. Using estimated density for spectral type', spectralType, ':', estimatedDensity, 'kg/m³');
+      return estimatedDensity;
+      
+    } catch (error) {
+      console.warn('Error extracting density from asteroid details:', error);
+      return 1600; // More realistic default density for asteroids
     }
   }
 
@@ -2311,10 +2339,10 @@ class App {
       'E': 3500,  // Enstatite - medium-high density
       'R': 3200,  // R-type - medium density
       'V': 2800,  // Vesta-like - medium density
-      'Unknown': 3000 // Default
+      'Unknown': 1600 // More realistic default for unknown asteroids
     };
     
-    return densityMap[spectralType] || 3000;
+    return densityMap[spectralType] || 1600;
   }
 
   // Create burning effect for meteor
@@ -3658,14 +3686,20 @@ class App {
 
   async selectAsteroid(){
     const select = document.getElementById('asteroidSelect'); 
-    if(!select.value) return alert('Select an asteroid');
+    if(!select.value) {
+      showEnhancedAlert('No Asteroid Selected', 'Please select an asteroid from the dropdown first.', 'warning');
+      return;
+    }
     
     const details = await this.fetchAsteroidDetails(select.value) || (this.asteroidList||[]).find(a=>a.id===select.value);
-    if(!details) return alert('Could not fetch asteroid details');
+    if(!details) {
+      showEnhancedAlert('Error', 'Could not fetch asteroid details. Please try again.', 'error');
+      return;
+    }
     
     // Calculate estimated impact energy with real density
     const avgDiameter = (details.estimated_diameter.meters.estimated_diameter_min + details.estimated_diameter.meters.estimated_diameter_max) / 2;
-    const density = await this.getMeteorDensity(details.id);
+    const density = await this.getMeteorDensityFromDetails(details);
     const mass = (4/3) * Math.PI * Math.pow(avgDiameter / 2, 3) * density;
     const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second) * 1000; // Convert to m/s
     const kineticEnergy = 0.5 * mass * velocity * velocity;
@@ -3688,7 +3722,7 @@ class App {
       <b>Threat Level: ${this.getThreatLevel(kilotons)}</b>
     `;
     
-    console.log('Asteroid selected:', details.name);
+    console.log('Asteroid selected:', details.name, 'Density:', density, 'kg/m³');
   }
 
   // Get threat level based on energy
@@ -3701,25 +3735,6 @@ class App {
     return 'Catastrophic';
   }
 
-  // Create random orbital object
-  createRandomOrbit() {
-    const orbitalParams = {
-      semiMajorAxis: 500000 + Math.random() * 2000000, // 500km to 2.5Mm
-      eccentricity: Math.random() * 0.8, // 0 to 0.8
-      inclination: Math.random() * Math.PI, // 0 to 180 degrees
-      longitudeOfAscendingNode: Math.random() * 2 * Math.PI,
-      argumentOfPeriapsis: Math.random() * 2 * Math.PI,
-      meanAnomaly: Math.random() * 2 * Math.PI,
-      period: 1800 + Math.random() * 7200, // 30 minutes to 2 hours
-      color: new THREE.Color().setHSL(Math.random(), 0.8, 0.6).getHex(),
-      size: 500 + Math.random() * 1500 // 500m to 2km
-    };
-    
-    const orbitalObject = this.createOrbitalObject(orbitalParams);
-    console.log('Created orbital object with params:', orbitalParams);
-    
-    return orbitalObject;
-  }
 
   async spawnSelectedAsteroid(){
     const select = document.getElementById('asteroidSelect'); 
@@ -3859,9 +3874,12 @@ class App {
   }
 }
 
-const app = new App();
-app.init();
-app.animate();
-
-// expose for debugging
-window.app = app;
+// Initialize the app when DOM is loaded
+document.addEventListener('DOMContentLoaded', async () => {
+  const app = new App();
+  await app.init();
+  app.animate();
+  
+  // expose for debugging
+  window.app = app;
+});

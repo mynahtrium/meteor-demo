@@ -39,12 +39,11 @@
         }
       </script>
 </head>
-<body onkeydown="return false;" onkeyup="return false;" style="overflow: hidden; height: 100vh; margin: 0; padding: 0;">
+<body style="overflow: hidden; height: 100vh; margin: 0; padding: 0;">
   <!-- Camera Focus UI (Top Right) -->
   <div id="cameraFocusUI" class="animate__animated animate__fadeInRight" data-aos="fade-left" data-aos-duration="800">
     <h3><i class="fas fa-video"></i> Camera Focus</h3>
     <button id="focusEarth" class="animate__animated animate__pulse animate__infinite animate__slower"><i class="fas fa-globe"></i> Focus Earth</button>
-    <button id="focusMoon"><i class="fas fa-moon"></i> Focus Moon</button>
     <button id="focusMeteor"><i class="fas fa-meteor"></i> Focus Last Meteor</button>
     <button id="focusFree"><i class="fas fa-expand-arrows-alt"></i> Free Camera</button>
   </div>
@@ -105,7 +104,7 @@
   <div id="ui" class="animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-duration="1000">
     <label><i class="fas fa-clock"></i> Simulation Speed:</label>
     <div class="speed-control animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-delay="100">
-      <input type="range" id="simSpeed" min="0.01" max="10" step="0.01" value="1" class="slider">
+      <input type="range" id="simSpeed" min="0.01" max="10" step="0.5" value="1" class="slider">
       <input type="number" id="simSpeedInput" min="0.01" max="1000" step="0.01" value="1" placeholder="Enter speed">
       <div class="speed-labels">
         <span>0.01x</span>
@@ -125,7 +124,9 @@
     <div class="button-row animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-delay="300">
       <button id="reset" class="btn-primary"><i class="fas fa-redo"></i> Reset</button>
       <button id="pause" class="btn-secondary"><i class="fas fa-pause"></i> Pause</button>
-      <button id="toggleAiming" class="btn-secondary"><i class="fas fa-crosshairs"></i> Hide Aiming</button>
+    </div>
+    <div class="button-row animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-delay="400">
+      <button id="fire" class="btn-success"><i class="fas fa-rocket"></i> Fire Meteor</button>
     </div>
     <div class="counters">
       <div><i class="fas fa-meteor"></i> Active Meteors: <span id="meteorCount">0</span></div>
@@ -142,9 +143,29 @@
 
     <label><i class="fas fa-list"></i> Select Asteroid:</label>
     <select id="asteroidSelect"></select>
-    <button id="selectAsteroid"><i class="fas fa-check"></i> Select Asteroid</button>
-    <button id="createOrbit"><i class="fas fa-satellite"></i> Create Orbital Object</button>
+    <button id="selectAsteroid"><i class="fas fa-check"></i> Asteroid Datadump</button>
     <div id="asteroidData"></div>
+    
+    <hr>
+    <label><i class="fas fa-cogs"></i> Physics Controls:</label>
+    <div class="button-row">
+      <button id="toggleRealism" class="btn-secondary"><i class="fas fa-atom"></i> Enable Realistic Physics</button>
+    </div>
+    <div class="button-row">
+      <button id="toggleAtmosphere" class="btn-secondary"><i class="fas fa-cloud"></i> Hide Atmosphere</button>
+      <button id="toggleMoon" class="btn-secondary"><i class="fas fa-moon"></i> Hide Moon</button>
+    </div>
+    <div class="button-row">
+      <button id="toggleGravityViz" class="btn-secondary"><i class="fas fa-magnet"></i> Show Gravity Fields</button>
+    </div>
+    
+    <hr>
+    <label><i class="fas fa-image"></i> Texture Controls:</label>
+    <div class="button-row">
+      <button id="highResTex" class="btn-secondary"><i class="fas fa-download"></i> Load High-Res Earth</button>
+    </div>
+    <input type="file" id="uploadTex" accept="image/*" style="display: none;">
+    <button onclick="document.getElementById('uploadTex').click()" class="btn-secondary"><i class="fas fa-upload"></i> Upload Texture</button>
   </div>
 
   <!-- Initialize JavaScript Libraries -->
