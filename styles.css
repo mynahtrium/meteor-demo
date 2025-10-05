@@ -13,6 +13,121 @@ body {
 }
 canvas { display:block; }
 
+/* Quick Stats Bar (Top Center) */
+#quickStatsUI {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 20px;
+  background: linear-gradient(180deg, rgba(20,24,36,0.9), rgba(12,14,22,0.85));
+  color: #e6eef8;
+  padding: 10px 20px;
+  box-sizing: border-box;
+  z-index: 30;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+  backdrop-filter: blur(6px) saturate(120%);
+}
+
+#quickStatsUI .stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+#quickStatsUI .stat-label {
+  font-size: 10px;
+  color: #b9cfe6;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#quickStatsUI .stat-value {
+  font-size: 16px;
+  color: #4CAF50;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
+}
+
+/* Keyboard Shortcuts Help (Top Right, below Camera Focus) */
+#helpUI {
+  position: absolute;
+  top: 200px;
+  right: 18px;
+  width: 200px;
+  background: linear-gradient(180deg, rgba(20,24,36,0.9), rgba(12,14,22,0.85));
+  color: #e6eef8;
+  padding: 10px;
+  box-sizing: border-box;
+  z-index: 20;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
+  backdrop-filter: blur(6px) saturate(120%);
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+#helpUI h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #cfe6ff;
+}
+
+.help-toggle {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: linear-gradient(180deg, #3a4a76, #2b3456);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.help-toggle:hover {
+  filter: brightness(1.1);
+}
+
+.shortcuts-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #b9cfe6;
+}
+
+.shortcuts-content.collapsed {
+  display: none;
+}
+
+.shortcuts-content div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shortcuts-content kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 6px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  color: #cfe6ff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
 /* Camera Focus UI (Top Right) */
 #cameraFocusUI {
   position: absolute;
@@ -520,11 +635,16 @@ canvas { display:block; }
 }
 
 @media (max-width: 800px) {
-  #ui { width: 200px; left: 10px; top: 10px; }
+  #ui { width: 200px; left: 10px; top: 10px; max-height: 300px; }
   #cameraFocusUI { width: 100px; right: 10px; top: 10px; }
   #statsUI { width: 140px; left: 10px; bottom: 10px; }
   #mapUI { width: 180px; right: 10px; bottom: 10px; }
   #statisticsUI { width: 140px; left: 160px; bottom: 10px; }
+  #helpUI { width: 160px; top: 120px; font-size: 10px; }
+  #quickStatsUI { flex-direction: column; gap: 8px; padding: 8px 12px; }
+  #quickStatsUI .stat-item { flex-direction: row; gap: 8px; }
+  #quickStatsUI .stat-label { font-size: 9px; }
+  #quickStatsUI .stat-value { font-size: 13px; }
   #mapUI.expanded {
     width: calc(100vw - 20px);
     right: 10px;
