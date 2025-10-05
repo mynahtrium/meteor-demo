@@ -11,6 +11,8 @@ body {
   -moz-user-select: none;
   -ms-user-select: none;
   transition: all 0.3s ease;
+  font-size: clamp(10px, 1.2vw, 14px); /* Fluid typography */
+  line-height: 1.4;
 }
 canvas { 
   display: block;
@@ -979,34 +981,101 @@ canvas {
   background: rgba(30,34,46,0.9) !important;
 }
 
-/* Responsive design for different zoom levels and screen sizes */
-@media (max-width: 1200px) {
+/* Enhanced Responsive Design for UI Harmony */
+
+/* Large Desktop (1440px+) */
+@media (min-width: 1440px) {
+  #ui { width: 280px; }
+  #cameraFocusUI { width: 180px; }
+  #statsUI { width: 220px; }
+  #mapUI { width: 280px; }
+  #statisticsUI { width: 220px; }
+  #quickStatsUI { gap: 30px; padding: 12px 25px; }
+  #quickStatsUI .stat-value { font-size: 18px; }
+}
+
+/* Standard Desktop (1200px - 1439px) */
+@media (max-width: 1439px) and (min-width: 1200px) {
+  #ui { width: 260px; }
+  #cameraFocusUI { width: 160px; }
+  #statsUI { width: 200px; }
+  #mapUI { width: 240px; }
+  #statisticsUI { width: 200px; }
+  #quickStatsUI { gap: 25px; padding: 10px 20px; }
+}
+
+/* Small Desktop (1000px - 1199px) */
+@media (max-width: 1199px) and (min-width: 1000px) {
   #ui { width: 240px; }
   #cameraFocusUI { width: 140px; }
   #statsUI { width: 180px; }
   #mapUI { width: 220px; }
   #statisticsUI { width: 180px; left: 200px; }
+  #quickStatsUI { gap: 20px; padding: 10px 18px; }
+  #quickStatsUI .stat-value { font-size: 15px; }
 }
 
-@media (max-width: 1000px) {
+/* Large Tablet (800px - 999px) */
+@media (max-width: 999px) and (min-width: 800px) {
   #ui { width: 220px; }
   #cameraFocusUI { width: 120px; }
   #statsUI { width: 160px; }
   #mapUI { width: 200px; }
   #statisticsUI { width: 160px; left: 180px; }
+  #quickStatsUI { gap: 15px; padding: 8px 15px; }
+  #quickStatsUI .stat-value { font-size: 14px; }
+  #quickStatsUI .stat-label { font-size: 9px; }
 }
 
-@media (max-width: 800px) {
-  #ui { width: 200px; left: 10px; top: 10px; max-height: 300px; }
-  #cameraFocusUI { width: 100px; right: 10px; top: 10px; }
-  #statsUI { width: 140px; left: 10px; bottom: 10px; }
-  #mapUI { width: 180px; right: 10px; bottom: 10px; }
-  #statisticsUI { width: 140px; left: 160px; bottom: 10px; }
-  #helpUI { width: 160px; top: 120px; font-size: 10px; }
-  #quickStatsUI { flex-direction: column; gap: 8px; padding: 8px 12px; }
-  #quickStatsUI .stat-item { flex-direction: row; gap: 8px; }
-  #quickStatsUI .stat-label { font-size: 9px; }
-  #quickStatsUI .stat-value { font-size: 13px; }
+/* Small Tablet (600px - 799px) */
+@media (max-width: 799px) and (min-width: 600px) {
+  #ui { 
+    width: 200px; 
+    left: 10px; 
+    top: 10px; 
+    max-height: 320px; 
+  }
+  #cameraFocusUI { 
+    width: 100px; 
+    right: 10px; 
+    top: 10px; 
+  }
+  #statsUI { 
+    width: 140px; 
+    left: 10px; 
+    bottom: 10px; 
+  }
+  #mapUI { 
+    width: 180px; 
+    right: 10px; 
+    bottom: 10px; 
+  }
+  #statisticsUI { 
+    width: 140px; 
+    left: 160px; 
+    bottom: 10px; 
+  }
+  #helpUI { 
+    width: 160px; 
+    top: 120px; 
+    font-size: 10px; 
+  }
+  #quickStatsUI { 
+    flex-direction: column; 
+    gap: 8px; 
+    padding: 8px 12px; 
+    top: 10px;
+  }
+  #quickStatsUI .stat-item { 
+    flex-direction: row; 
+    gap: 8px; 
+  }
+  #quickStatsUI .stat-label { 
+    font-size: 9px; 
+  }
+  #quickStatsUI .stat-value { 
+    font-size: 13px; 
+  }
   #mapUI.expanded {
     width: calc(100vw - 20px);
     right: 10px;
@@ -1014,11 +1083,283 @@ canvas {
   }
 }
 
-/* Zoom level adjustments */
-@media (min-resolution: 1.1dppx) {
-  #ui { width: 240px; }
-  #cameraFocusUI { width: 140px; }
-  #statsUI { width: 180px; }
-  #mapUI { width: 220px; }
-  #statisticsUI { width: 180px; left: 200px; }
+/* Mobile Landscape (480px - 599px) */
+@media (max-width: 599px) and (min-width: 480px) {
+  #ui { 
+    width: 180px; 
+    left: 8px; 
+    top: 8px; 
+    max-height: 280px; 
+    font-size: 10px;
+  }
+  #cameraFocusUI { 
+    width: 90px; 
+    right: 8px; 
+    top: 8px; 
+    font-size: 10px;
+  }
+  #statsUI { 
+    width: 120px; 
+    left: 8px; 
+    bottom: 8px; 
+    font-size: 10px;
+  }
+  #mapUI { 
+    width: 160px; 
+    right: 8px; 
+    bottom: 8px; 
+  }
+  #statisticsUI { 
+    width: 120px; 
+    left: 140px; 
+    bottom: 8px; 
+    font-size: 10px;
+  }
+  #quickStatsUI { 
+    flex-direction: column; 
+    gap: 6px; 
+    padding: 6px 10px; 
+    top: 8px;
+    font-size: 9px;
+  }
+  #quickStatsUI .stat-item { 
+    flex-direction: row; 
+    gap: 6px; 
+  }
+  #quickStatsUI .stat-label { 
+    font-size: 8px; 
+  }
+  #quickStatsUI .stat-value { 
+    font-size: 11px; 
+  }
+  #mapUI.expanded {
+    width: calc(100vw - 16px);
+    right: 8px;
+    bottom: 8px;
+  }
+  .map-controls {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .map-toggle {
+    font-size: 9px;
+    padding: 3px 6px;
+  }
+}
+
+/* Mobile Portrait (320px - 479px) */
+@media (max-width: 479px) {
+  #ui { 
+    width: calc(100vw - 16px); 
+    left: 8px; 
+    top: 8px; 
+    max-height: 200px; 
+    font-size: 9px;
+  }
+  #cameraFocusUI { 
+    width: calc(50vw - 12px); 
+    right: 8px; 
+    top: 8px; 
+    font-size: 9px;
+  }
+  #statsUI { 
+    width: calc(50vw - 12px); 
+    left: 8px; 
+    bottom: 8px; 
+    font-size: 9px;
+  }
+  #mapUI { 
+    width: calc(50vw - 12px); 
+    right: 8px; 
+    bottom: 8px; 
+  }
+  #statisticsUI { 
+    display: none; /* Hide on very small screens to prevent overlap */
+  }
+  #quickStatsUI { 
+    flex-direction: row; 
+    gap: 4px; 
+    padding: 4px 8px; 
+    top: 8px;
+    font-size: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  #quickStatsUI .stat-item { 
+    flex-direction: column; 
+    gap: 2px; 
+    min-width: 60px;
+  }
+  #quickStatsUI .stat-label { 
+    font-size: 7px; 
+  }
+  #quickStatsUI .stat-value { 
+    font-size: 10px; 
+  }
+  #mapUI.expanded {
+    width: calc(100vw - 16px);
+    right: 8px;
+    bottom: 8px;
+    height: 250px;
+  }
+  .map-controls {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .map-toggle {
+    font-size: 8px;
+    padding: 2px 4px;
+  }
+  #ui label {
+    font-size: 9px;
+    margin: 3px 0 2px;
+  }
+  #ui input, #ui select {
+    padding: 6px;
+    font-size: 9px;
+  }
+  #ui button {
+    padding: 4px 8px;
+    font-size: 9px;
+  }
+}
+
+/* High DPI / Retina Displays */
+@media (min-resolution: 1.5dppx) {
+  #ui { 
+    border-width: 0.5px;
+  }
+  #cameraFocusUI, #statsUI, #mapUI, #statisticsUI, #quickStatsUI {
+    border-width: 0.5px;
+  }
+}
+
+/* Ultra-wide screens (2560px+) */
+@media (min-width: 2560px) {
+  #ui { width: 320px; }
+  #cameraFocusUI { width: 200px; }
+  #statsUI { width: 250px; }
+  #mapUI { width: 320px; }
+  #statisticsUI { width: 250px; }
+  #quickStatsUI { gap: 40px; padding: 15px 30px; }
+  #quickStatsUI .stat-value { font-size: 20px; }
+  #quickStatsUI .stat-label { font-size: 12px; }
+}
+
+/* Landscape orientation adjustments */
+@media (orientation: landscape) and (max-height: 600px) {
+  #ui {
+    max-height: calc(100vh - 20px);
+  }
+  #quickStatsUI {
+    flex-direction: row;
+    gap: 15px;
+    padding: 6px 15px;
+  }
+  #quickStatsUI .stat-item {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+/* Print styles */
+@media print {
+  #ui, #cameraFocusUI, #statsUI, #mapUI, #statisticsUI, #quickStatsUI {
+    display: none;
+  }
+  body {
+    background: white;
+    color: black;
+  }
+}
+
+/* Utility classes for consistent spacing */
+.spacing-xs { margin: 2px; }
+.spacing-sm { margin: 4px; }
+.spacing-md { margin: 8px; }
+.spacing-lg { margin: 12px; }
+.spacing-xl { margin: 16px; }
+
+.padding-xs { padding: 2px; }
+.padding-sm { padding: 4px; }
+.padding-md { padding: 8px; }
+.padding-lg { padding: 12px; }
+.padding-xl { padding: 16px; }
+
+/* Fluid spacing utilities */
+.fluid-spacing {
+  margin: clamp(4px, 1vw, 12px);
+  padding: clamp(6px, 1.5vw, 16px);
+}
+
+/* Responsive text utilities */
+.text-responsive-xs { font-size: clamp(8px, 1vw, 10px); }
+.text-responsive-sm { font-size: clamp(10px, 1.2vw, 12px); }
+.text-responsive-md { font-size: clamp(12px, 1.4vw, 14px); }
+.text-responsive-lg { font-size: clamp(14px, 1.6vw, 18px); }
+.text-responsive-xl { font-size: clamp(16px, 2vw, 24px); }
+
+/* Container queries for component-level responsiveness */
+@container (max-width: 200px) {
+  .container-responsive {
+    font-size: 0.8em;
+    padding: 0.5em;
+  }
+}
+
+@container (min-width: 300px) {
+  .container-responsive {
+    font-size: 1.1em;
+    padding: 1em;
+  }
+}
+
+/* Improved focus states for accessibility */
+*:focus-visible {
+  outline: 2px solid #4CAF50;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Better touch targets for mobile */
+@media (pointer: coarse) {
+  button, input, select, .clickable {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .map-toggle, #ui button {
+    padding: 8px 12px;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  #quickStatsUI .stat-value {
+    animation: none;
+  }
+  
+  .slider::-webkit-slider-thumb {
+    animation: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  #ui, #cameraFocusUI, #statsUI, #mapUI, #statisticsUI, #quickStatsUI {
+    border: 2px solid #ffffff;
+    background: #000000;
+  }
+  
+  #ui input, #ui select {
+    border: 2px solid #ffffff;
+    background: #000000;
+    color: #ffffff;
+  }
 }
