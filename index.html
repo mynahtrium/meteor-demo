@@ -133,28 +133,30 @@
       <button id="reset">Reset</button>
       <button id="pause">Pause</button>
       <button id="toggleAiming">Hide Aiming</button>
-      <button id="fire">Fire</button>
     </div>
+    <button id="fire">Fire</button>
     <hr>
 
     <label>NASA API Key:</label>
     <input type="text" id="apiKey" placeholder="Enter your key" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     <button id="fetch">Fetch Asteroid List</button>
-  <button id="loadMore">Load More Asteroids</button>
+    <button id="loadMore">Load More Asteroids</button>
 
     <label>Select Asteroid:</label>
     <select id="asteroidSelect"></select>
     <button id="selectAsteroid">Select Asteroid</button>
     <button id="createOrbit">Create Orbital Object</button>
 
-  <label>Physics</label>
-  <button id="toggleRealism">Enable Realistic Physics</button>
-  <button id="toggleAtmosphere">Show Atmosphere</button>
-  <button id="toggleMoon">Show Moon</button>
+    <label>Physics</label>
+    <button id="toggleRealism">Enable Realistic Physics</button>
+    <button id="toggleAtmosphere">Show Atmosphere</button>
+    <button id="toggleMoon">Show Moon</button>
     <button id="toggleGravityViz">Show Gravity Fields</button>
-  <button id="highResTex">Load High-res Earth Texture</button>
-  <label style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
-  <input type="file" id="uploadTex" accept="image/*" autocomplete="off">
+    
+    <label>Texture</label>
+    <button id="highResTex">Load High-res Earth Texture</button>
+    <label style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
+    <input type="file" id="uploadTex" accept="image/*" autocomplete="off">
 
     <div id="asteroidData"></div>
   </div>

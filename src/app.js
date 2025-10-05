@@ -1155,8 +1155,15 @@ class App {
     }
   }
 
-  onKeyDown(event) { 
+  onKeyDown(event) {
+    // Ignore key events if user is typing in an input field
+    const target = event.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+      return;
+    }
+    
     if(event.code === 'Space') {
+      event.preventDefault(); // Prevent page scroll on spacebar
       // Check if a NASA meteor is selected, otherwise fire basic meteor
       const select = document.getElementById('asteroidSelect');
       if (select && select.value) {
@@ -1467,21 +1474,20 @@ class App {
     if (meteor.mass > massLoss) {
       meteor.mass -= massLoss;
       
-      // Update size based on mass reduction (assuming constant density)
-      const originalVolume = (4/3) * Math.PI * Math.pow(meteor.size / 2, 3);
+      // Update size based on mass reduction using simplified formula
+      // mass = density × radius × π, so radius = mass / (density × π)
+      const density = meteor.mass / (meteor.size / 2 * Math.PI); // Extract original density
       
-      // Prevent division by zero
-      if (originalVolume > 0 && meteor.mass > 0) {
-        const meteorDensity = meteor.mass / originalVolume;
-        const newVolume = meteor.mass / meteorDensity;
-        const newRadius = Math.pow((3 * newVolume) / (4 * Math.PI), 1/3);
+      if (meteor.mass > 0 && density > 0) {
+        const newRadius = meteor.mass / (density * Math.PI);
         meteor.size = newRadius * 2;
       } else {
         meteor.size = 0; // Meteor completely burned up
       }
       
       // Update area
-      meteor.area = Math.PI * Math.pow(meteor.size / 2, 2);
+      const radius = meteor.size / 2;
+      meteor.area = Math.PI * Math.pow(radius, 2);
       
       // Scale the mesh
       const radiusMeters = meteor.size / 2;
@@ -2952,10 +2958,10 @@ class App {
     const midSize = (minSize + maxSize) / 2;
     
     // Calculate realistic mass and properties
-    const density = 3000; // kg/m³ - typical asteroid density
-    const volume = (4/3) * Math.PI * Math.pow(midSize/2, 3);
-    const mass = density * volume;
-    const area = Math.PI * Math.pow(midSize/2, 2);
+    const density = 1600; // kg/m³ - typical asteroid density
+    const radius = midSize / 2; // radius in meters
+    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const area = Math.PI * Math.pow(radius, 2);
     
     // Create randomized meteor mesh
     const meteor = this.createRandomizedMeteor();
@@ -3085,10 +3091,10 @@ class App {
     const meteor = this.createRandomizedMeteor();
     meteor.position.copy(this.camera.position);
     const dir = new THREE.Vector3().subVectors(this.cursor.position, this.camera.position).normalize();
-    const density = 3000; // 3g/cm³ = 3000 kg/m³
-    const volume = (4/3)*Math.PI*Math.pow(size/2,3);
-    const mass = density * volume;
-    const area = Math.PI * Math.pow(size/2,2);
+    const density = 1600; // kg/m³ - typical asteroid density
+    const radius = size / 2; // radius in meters
+    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const area = Math.PI * Math.pow(radius, 2);
   this.scene.add(meteor);
   const label = this.createLabel(`Meteor (${(size).toFixed(2)} m)`, meteor.position);
     const physVelocity = dir.clone().multiplyScalar(speed * this.SCENE_SCALE);
@@ -3162,7 +3168,9 @@ class App {
       return { lat: 0, lon: 0 };
     }
     
-    const lat = Math.asin(y / radius) * 180 / Math.PI;
+    // Clamp y/radius to prevent Math.asin from returning NaN
+    const sinValue = Math.max(-1, Math.min(1, y / radius));
+    const lat = Math.asin(sinValue) * 180 / Math.PI;
     const lon = -Math.atan2(z, x) * 180 / Math.PI; // Reverse longitude for correct mapping
     
     return { lat: lat, lon: lon };
@@ -3507,9 +3515,16 @@ class App {
         // Random chance of complete burn-up based on burn intensity and speed
         if(Math.random() < meteor.burnIntensity * burnRate) {
           meteor.active = false;
-          this.scene.remove(meteor.mesh);
+          // Proper cleanup with disposal
+          if (meteor.mesh) {
+            this.scene.remove(meteor.mesh);
+            if (meteor.mesh.geometry) meteor.mesh.geometry.dispose();
+            if (meteor.mesh.material) meteor.mesh.material.dispose();
+          }
           if(meteor.fireTrail) {
             this.scene.remove(meteor.fireTrail);
+            if (meteor.fireTrail.geometry) meteor.fireTrail.geometry.dispose();
+            if (meteor.fireTrail.material) meteor.fireTrail.material.dispose();
           }
           if(meteor.label && meteor.label.element && meteor.label.element.parentNode) {
             meteor.label.element.parentNode.removeChild(meteor.label.element);
@@ -3628,13 +3643,19 @@ class App {
           this.impactCount++;
         }catch(e){ console.error('impact energy calc', e); const ie = document.getElementById('impactEnergy'); if(ie) ie.innerText = '-'; }
         
-        this.scene.remove(meteor.mesh);
+        // Proper cleanup with disposal
+        if (meteor.mesh) {
+          this.scene.remove(meteor.mesh);
+          if (meteor.mesh.geometry) meteor.mesh.geometry.dispose();
+          if (meteor.mesh.material) meteor.mesh.material.dispose();
+        }
         if(meteor.fireTrail) {
           this.scene.remove(meteor.fireTrail);
+          if (meteor.fireTrail.geometry) meteor.fireTrail.geometry.dispose();
+          if (meteor.fireTrail.material) meteor.fireTrail.material.dispose();
         }
         if(meteor.label && meteor.label.element && meteor.label.element.parentNode) meteor.label.element.parentNode.removeChild(meteor.label.element);
-        const li = this.labels.indexOf(meteor.label); if(li!==-1) this.labels.splice(li,1);
-        this.impactCount++; 
+        const li = this.labels.indexOf(meteor.label); if(li!==-1) this.labels.splice(li,1); 
         if (this.cachedElements.impactCount) {
           this.cachedElements.impactCount.innerText = String(this.impactCount);
         }
@@ -3797,11 +3818,18 @@ class App {
       return;
     }
     
+    // Validate asteroid data exists
+    if (!details.estimated_diameter || !details.close_approach_data || !details.close_approach_data[0]) {
+      showEnhancedAlert('Invalid Data', 'Asteroid data is incomplete or invalid.', 'error');
+      return;
+    }
+    
     // Calculate estimated impact energy with real density
     const avgDiameter = (details.estimated_diameter.meters.estimated_diameter_min + details.estimated_diameter.meters.estimated_diameter_max) / 2;
     const density = await this.getMeteorDensityFromDetails(details);
-    const mass = (4/3) * Math.PI * Math.pow(avgDiameter / 2, 3) * density;
-    const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second) * 1000; // Convert to m/s
+    const radius = avgDiameter / 2; // radius in meters
+    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second) * 1000 || 20000; // Convert to m/s with fallback
     const kineticEnergy = 0.5 * mass * velocity * velocity;
     const kilotons = kineticEnergy / 4.184e12;
     const blastRadius = this.calculateBlastRadius(kineticEnergy);
@@ -3844,18 +3872,24 @@ class App {
     if(!details) return alert('Could not fetch asteroid details');
     
     // Calculate mid-size from min and max diameter
+    // Validate asteroid data exists
+    if (!details.estimated_diameter || !details.close_approach_data || !details.close_approach_data[0]) {
+      showEnhancedAlert('Invalid Data', 'Asteroid data is incomplete or invalid.', 'error');
+      return;
+    }
+    
     const minSize = details.estimated_diameter.meters.estimated_diameter_min;
     const maxSize = details.estimated_diameter.meters.estimated_diameter_max;
     const midSize = (minSize + maxSize) / 2;
     
-    const approach = parseFloat(details.close_approach_data[0].miss_distance.kilometers);
-    const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second);
+    const approach = parseFloat(details.close_approach_data[0].miss_distance.kilometers) || 100000;
+    const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second) || 20;
     
     // Calculate realistic mass and properties
-    const density = 3000; // kg/m³ - typical asteroid density
-    const volume = (4/3) * Math.PI * Math.pow(midSize/2, 3);
-    const mass = density * volume;
-    const area = Math.PI * Math.pow(midSize/2, 2);
+    const density = 1600; // kg/m³ - typical asteroid density
+    const radius = midSize / 2; // radius in meters
+    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const area = Math.PI * Math.pow(radius, 2);
     
     // Update UI with detailed information
     document.getElementById('asteroidData').innerHTML = `
@@ -3956,20 +3990,30 @@ class App {
   }
 
   onWindowResize(){ 
-    if(!this.camera||!this.renderer) return; 
-    this.camera.aspect = window.innerWidth/window.innerHeight; 
+    if(!this.camera||!this.renderer) return;
+    
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    
+    // Validate dimensions to prevent rendering errors
+    if (width <= 0 || height <= 0) {
+      console.warn('Invalid window dimensions, skipping resize');
+      return;
+    }
+    
+    this.camera.aspect = width / height; 
     this.camera.updateProjectionMatrix(); 
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(width, height);
     
     // Update effect composer size if it exists
     if (this.effectComposer) {
-      this.effectComposer.setSize(window.innerWidth, window.innerHeight);
+      this.effectComposer.setSize(width, height);
     }
     
     // Update DOF pass if it exists
     if (this.dofPass) {
       this.dofPass.uniforms.aspect.value = this.camera.aspect;
-      this.dofPass.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+      this.dofPass.uniforms.resolution.value.set(width, height);
     }
   }
 }
