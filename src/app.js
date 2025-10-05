@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+// Enhanced alert function for better user notifications
+function showEnhancedAlert(title, message, type = 'info') {
+  // Simple alert fallback - can be enhanced with a UI library like SweetAlert2 if needed
+  const prefix = type === 'error' ? '❌ ' : type === 'warning' ? '⚠️ ' : 'ℹ️ ';
+  alert(`${prefix}${title}\n\n${message}`);
+}
+
 class App {
   constructor() {
     // Scene objects
@@ -18,7 +25,6 @@ class App {
     this.simSpeed = 1;
     this.realistic = false;
     this.paused = false;
-    this.impactCount = 0;
     this.showAiming = true;
     this.showAtmosphere = true;
     this.showMoon = true;
@@ -887,11 +893,8 @@ class App {
         height: window.innerHeight
       });
       this.effectComposer.addPass(this.dofPass);
-      
-      console.log('Post-processing effects enabled successfully');
     } catch (error) {
       console.warn('Failed to load post-processing effects:', error);
-      console.log('Falling back to standard rendering');
       this.effectComposer = null;
     }
   }
@@ -1022,6 +1025,7 @@ class App {
     const moonBtn = el('toggleMoon'); if(moonBtn) moonBtn.onclick = (e)=>{ this.showMoon = !this.showMoon; e.target.innerText = this.showMoon? 'Hide Moon' : 'Show Moon'; const moon = this.scene.getObjectByName('moon'); if(moon) moon.visible = this.showMoon; };
     const gravityBtn = el('toggleGravityViz'); if(gravityBtn) gravityBtn.onclick = (e)=>{ this.showGravityViz = !this.showGravityViz; e.target.innerText = this.showGravityViz? 'Hide Gravity Fields' : 'Show Gravity Fields'; this.toggleGravityVisualizers(); };
     if (el('selectAsteroid')) el('selectAsteroid').onclick = () => this.selectAsteroid();
+    if (el('createOrbit')) el('createOrbit').onclick = () => this.createOrbitalObject();
     if (el('toggleMapSize')) el('toggleMapSize').onclick = () => this.toggleMapSize();
     
     // Camera focus buttons
@@ -1029,6 +1033,26 @@ class App {
     if (el('focusMoon')) el('focusMoon').onclick = () => this.focusOnMoon();
     if (el('focusMeteor')) el('focusMeteor').onclick = () => this.focusOnLastMeteor();
     if (el('focusFree')) el('focusFree').onclick = () => this.setFreeCamera();
+    
+    // Toggle aiming button
+    const aimBtn = el('toggleAiming');
+    if (aimBtn) aimBtn.onclick = (e) => {
+      this.showAiming = !this.showAiming;
+      e.target.innerText = this.showAiming ? 'Hide Aiming' : 'Show Aiming';
+      const aimObj = this.scene.getObjectByName('aimingLine');
+      if (aimObj) aimObj.visible = this.showAiming;
+      if (this.cursor) this.cursor.visible = this.showAiming;
+    };
+    
+    // Toggle help UI button
+    const helpBtn = el('toggleHelp');
+    if (helpBtn) helpBtn.onclick = (e) => {
+      const shortcuts = el('shortcuts');
+      if (shortcuts) {
+        shortcuts.classList.toggle('collapsed');
+        e.target.innerText = shortcuts.classList.contains('collapsed') ? 'Expand' : 'Collapse';
+      }
+    };
 
     // initial aiming visibility
     const aimObj = this.scene.getObjectByName('aimingLine'); if (aimObj) aimObj.visible = this.showAiming;
@@ -1061,7 +1085,6 @@ class App {
     loader.load(localPath, tex => {
       const earth = this.scene.getObjectByName('earth');
       if(earth && earth.material){
-        console.log('Found Earth object, applying texture...');
         if(earth.material.color) earth.material.color.setHex(0xffffff);
         tex.encoding = THREE.sRGBEncoding;
         tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
@@ -1070,43 +1093,15 @@ class App {
         tex.generateMipmaps = true;
         earth.material.map = tex; 
         earth.material.needsUpdate = true;
-        console.log('Successfully loaded local earth texture:', localPath);
-        console.log('Earth material after texture load:', earth.material);
-      } else {
-        console.warn('Earth object not found or has no material');
       }
     }, undefined, err => {
-      // silent fail if not present or CORS
-      console.debug('Local earth texture not found or failed to load:', localPath, err && err.message);
+      // Silent fail if texture not present or CORS issue
     });
-  }
-
-  // Debug function to manually test texture loading
-  debugEarthTexture() {
-    const earth = this.scene.getObjectByName('earth');
-    if (!earth) {
-      console.error('Earth object not found!');
-      return;
-    }
-    console.log('Earth object found:', earth);
-    console.log('Earth material:', earth.material);
-    console.log('Earth material map:', earth.material.map);
-    console.log('Earth material color:', earth.material.color);
-    
-    // Try to load texture manually
-    this.tryLoadLocalEarthTexture();
   }
 
   // Toggle post-processing effects
   togglePostProcessing() {
-    if (this.effectComposer) {
-      console.log('Post-processing effects are currently enabled');
-      console.log('Effect composer:', this.effectComposer);
-      console.log('Bloom pass:', this.bloomPass);
-      console.log('DOF pass:', this.dofPass);
-    } else {
-      console.log('Post-processing effects are disabled');
-      console.log('Attempting to re-enable...');
+    if (!this.effectComposer) {
       this.setupPostProcessing();
     }
   }
@@ -1115,9 +1110,6 @@ class App {
   adjustBloom(strength) {
     if (this.bloomPass) {
       this.bloomPass.strength = Math.max(0, Math.min(3, strength));
-      console.log('Bloom strength set to:', this.bloomPass.strength);
-    } else {
-      console.log('Bloom pass not available');
     }
   }
 
@@ -1809,7 +1801,7 @@ class App {
     
     L.control.layers(baseMaps).addTo(this.leafletMap);
     
-    console.log('Leaflet map initialized');
+      // Leaflet map initialized
   }
 
   // Fallback map when Leaflet is not available
@@ -1840,7 +1832,7 @@ class App {
     
     mapElement.appendChild(canvas);
     
-    console.log('Fallback map initialized');
+    // Fallback map initialized
   }
 
   // Add impact marker to Leaflet map
@@ -1991,7 +1983,7 @@ class App {
         this.addTsunamiZone(zone);
       });
       
-      console.log('Loaded tsunami zones:', tsunamiZoneData.length);
+      // Tsunami zones loaded successfully
     } catch (error) {
       console.error('Error loading tsunami zones:', error);
     }
@@ -2055,7 +2047,7 @@ class App {
       this.generateTsunami(lat, lon, magnitude, earthquakeRadius);
     }
     
-    console.log(`Earthquake: M${magnitude.toFixed(1)} with ${earthquakeRadius.toFixed(1)}km radius`);
+    // Earthquake effect created
   }
 
   // Add earthquake effect to map
@@ -2264,7 +2256,7 @@ class App {
       texture.generateMipmaps = true;
       material.map = texture;
       material.needsUpdate = true;
-      console.log('Meteor texture loaded successfully');
+      // Meteor texture loaded successfully
     }, undefined, err => {
       console.debug('Meteor texture not found, using default material');
     });
@@ -2277,6 +2269,9 @@ class App {
       if (!apiKey) return 1600; // More realistic default density for asteroids
       
       const response = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${asteroidId}?api_key=${apiKey}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       
       return this.getMeteorDensityFromDetails(data);
@@ -2290,18 +2285,15 @@ class App {
   // Get meteor density from already-fetched asteroid details
   getMeteorDensityFromDetails(details) {
     try {
-      console.log('Extracting density from asteroid details:', details.name);
       
       // Check for density in various possible locations in the NASA API response
       if (details.orbital_data && details.orbital_data.density) {
         const density = parseFloat(details.orbital_data.density) * 1000; // Convert g/cm³ to kg/m³
-        console.log('Found NASA density data:', density, 'kg/m³');
         return density;
       }
       
       if (details.orbital_data && details.orbital_data.bulk_density) {
         const density = parseFloat(details.orbital_data.bulk_density) * 1000; // Convert g/cm³ to kg/m³
-        console.log('Found NASA bulk_density data:', density, 'kg/m³');
         return density;
       }
       
@@ -2314,7 +2306,6 @@ class App {
       
       // Use more realistic default density for asteroids (1600 kg/m³)
       const estimatedDensity = this.estimateDensityFromType(spectralType);
-      console.log('NASA API does not provide density data. Using estimated density for spectral type', spectralType, ':', estimatedDensity, 'kg/m³');
       return estimatedDensity;
       
     } catch (error) {
@@ -2405,7 +2396,7 @@ class App {
     
     // Log explosion data
     const kilotons = energy / 4.184e12;
-    console.log(`Impact: ${kilotons.toFixed(2)} kt`);
+    // Impact registered
     
     // Create particle explosion
     this.createParticleExplosion(position, energy, meteorSize);
@@ -3634,6 +3625,9 @@ class App {
     if(!loadMore) { this.neoPage = 0; this.asteroidList = []; document.getElementById('asteroidSelect').innerHTML = ''; }
     try{
       const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/browse?page=${this.neoPage||0}&size=20&api_key=${apiKey}`);
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
       const data = await res.json();
       const select = document.getElementById('asteroidSelect');
       data.near_earth_objects.forEach(a=>{
@@ -3680,8 +3674,18 @@ class App {
   }
 
   async fetchAsteroidDetails(id){
-    const apiKey = document.getElementById('apiKey')?.value.trim(); if(!apiKey) return null;
-    try{ const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${id}?api_key=${apiKey}`); return await res.json(); }catch(err){ console.error(err); return null; }
+    const apiKey = document.getElementById('apiKey')?.value.trim(); 
+    if(!apiKey) return null;
+    try{ 
+      const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${id}?api_key=${apiKey}`); 
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+      return await res.json(); 
+    }catch(err){ 
+      console.error(err); 
+      return null; 
+    }
   }
 
   async selectAsteroid(){
@@ -3722,7 +3726,7 @@ class App {
       <b>Threat Level: ${this.getThreatLevel(kilotons)}</b>
     `;
     
-    console.log('Asteroid selected:', details.name, 'Density:', density, 'kg/m³');
+    // Asteroid selected and loaded
   }
 
   // Get threat level based on energy
