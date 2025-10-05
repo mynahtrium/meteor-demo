@@ -53,6 +53,9 @@ class App {
     this.lastFpsTime = Date.now();
     this.currentFps = 60;
     
+    // Cached DOM elements for performance
+    this.cachedElements = {};
+    
     // Map tracking
     this.impactLocations = [];
     this.mapCanvas = null;
@@ -1065,6 +1068,9 @@ class App {
     window.togglePostProcessing = () => this.togglePostProcessing();
     window.adjustBloom = (strength) => this.adjustBloom(strength);
     
+    // Cache frequently accessed DOM elements for performance
+    this.cacheDOMElements();
+    
     // Initialize map
     this.initMap();
     
@@ -1463,10 +1469,16 @@ class App {
       
       // Update size based on mass reduction (assuming constant density)
       const originalVolume = (4/3) * Math.PI * Math.pow(meteor.size / 2, 3);
-      const meteorDensity = meteor.mass / originalVolume;
-      const newVolume = meteor.mass / meteorDensity;
-      const newRadius = Math.pow((3 * newVolume) / (4 * Math.PI), 1/3);
-      meteor.size = newRadius * 2;
+      
+      // Prevent division by zero
+      if (originalVolume > 0 && meteor.mass > 0) {
+        const meteorDensity = meteor.mass / originalVolume;
+        const newVolume = meteor.mass / meteorDensity;
+        const newRadius = Math.pow((3 * newVolume) / (4 * Math.PI), 1/3);
+        meteor.size = newRadius * 2;
+      } else {
+        meteor.size = 0; // Meteor completely burned up
+      }
       
       // Update area
       meteor.area = Math.PI * Math.pow(meteor.size / 2, 2);
@@ -1623,8 +1635,20 @@ class App {
     const t3 = Math.sin(x);
     const t4 = e * t3;
     const t5 = -x + t4 + M;
+    
+    // Prevent division by zero in Kepler solver
+    if (Math.abs(t2) < 1e-10) {
+      return 0;
+    }
+    
     const t6 = t5 / (0.5 * t5 * t4 / t2 + t2);
-    return t5 / ((0.5 * t3 - (1/6) * t1 * t6) * e * t6 + t2);
+    const denominator = (0.5 * t3 - (1/6) * t1 * t6) * e * t6 + t2;
+    
+    if (Math.abs(denominator) < 1e-10) {
+      return 0;
+    }
+    
+    return t5 / denominator;
   }
 
   keplerSolve(e, M) {
@@ -3116,13 +3140,12 @@ class App {
     if (status) status.innerText = this.lastMeteorData.active ? 'Active' : 'Impacted';
   }
 
-  // Initialize map
+  // Initialize map (Note: canvas map is not used, using Leaflet instead)
   initMap() {
-    this.mapCanvas = document.getElementById('impactMap');
-    if (this.mapCanvas) {
-      this.mapCtx = this.mapCanvas.getContext('2d');
-      this.drawMap();
-    }
+    // Canvas-based map is deprecated in favor of Leaflet map
+    // Keeping this stub for backward compatibility
+    this.mapCanvas = null;
+    this.mapCtx = null;
   }
 
   // Convert 3D position to latitude/longitude
@@ -3132,7 +3155,14 @@ class App {
     const z = position.z;
     
     // Convert to spherical coordinates
-    const lat = Math.asin(y / Math.sqrt(x*x + y*y + z*z)) * 180 / Math.PI;
+    const radius = Math.sqrt(x*x + y*y + z*z);
+    
+    // Prevent division by zero
+    if (radius < 0.0001) {
+      return { lat: 0, lon: 0 };
+    }
+    
+    const lat = Math.asin(y / radius) * 180 / Math.PI;
     const lon = -Math.atan2(z, x) * 180 / Math.PI; // Reverse longitude for correct mapping
     
     return { lat: lat, lon: lon };
@@ -3194,6 +3224,8 @@ class App {
   // Add impact to map
   addImpactToMap(position, energy) {
     const latLon = this.positionToLatLon(position);
+    const blastRadius = this.calculateBlastRadius(energy);
+    
     this.impactLocations.push({
       lat: latLon.lat,
       lon: latLon.lon,
@@ -3205,12 +3237,33 @@ class App {
     const latEl = document.getElementById('impactLat');
     const lonEl = document.getElementById('impactLon');
     const energyEl = document.getElementById('mapEnergy');
+    const blastRadiusEl = document.getElementById('blastRadius');
     
     if (latEl) latEl.textContent = latLon.lat.toFixed(2);
     if (lonEl) lonEl.textContent = latLon.lon.toFixed(2);
     if (energyEl) energyEl.textContent = (energy / 4.184e12).toFixed(2);
+    if (blastRadiusEl) blastRadiusEl.textContent = blastRadius.toFixed(2);
     
     this.drawMap();
+  }
+
+  // Cache frequently accessed DOM elements
+  cacheDOMElements() {
+    const el = (id) => document.getElementById(id);
+    this.cachedElements = {
+      fps: el('fps'),
+      objectCount: el('objectCount'),
+      memoryUsage: el('memoryUsage'),
+      gravityMode: el('gravityMode'),
+      atmosphereMode: el('atmosphereMode'),
+      moonGravityMode: el('moonGravityMode'),
+      totalEnergy: el('totalEnergy'),
+      largestImpact: el('largestImpact'),
+      avgImpact: el('avgImpact'),
+      meteorCount: el('meteorCount'),
+      simTime: el('simTime'),
+      impactCount: el('impactCount')
+    };
   }
 
   // Update statistics UI
@@ -3227,51 +3280,81 @@ class App {
     // Object count
     const objectCount = this.meteors.length + this.particleSystems.length + this.impactEffects.length + this.trajectoryLines.length;
     
-    // Memory usage (approximate)
-    const memoryUsage = Math.round((performance.memory ? performance.memory.usedJSHeapSize : 0) / 1024 / 1024);
+    // Memory usage (approximate) - Chrome only
+    let memoryUsage = 0;
+    if (performance.memory && performance.memory.usedJSHeapSize) {
+      memoryUsage = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
+    }
     
-    // Update UI elements
-    const fps = document.getElementById('fps');
-    const objCount = document.getElementById('objectCount');
-    const memUsage = document.getElementById('memoryUsage');
-    const gravityMode = document.getElementById('gravityMode');
-    const atmosphereMode = document.getElementById('atmosphereMode');
-    const moonGravityMode = document.getElementById('moonGravityMode');
-    const totalEnergy = document.getElementById('totalEnergy');
-    const largestImpact = document.getElementById('largestImpact');
-    const avgImpact = document.getElementById('avgImpact');
-    
-    if (fps) fps.textContent = this.currentFps;
-    if (objCount) objCount.textContent = objectCount;
-    if (memUsage) memUsage.textContent = memoryUsage;
-    if (gravityMode) gravityMode.textContent = this.realistic ? 'Realistic' : 'Simple';
-    if (atmosphereMode) atmosphereMode.textContent = this.showAtmosphere ? 'On' : 'Off';
-    if (moonGravityMode) moonGravityMode.textContent = this.showMoon ? 'On' : 'Off';
-    if (totalEnergy) totalEnergy.textContent = this.totalImpactEnergy.toExponential(2);
-    if (largestImpact) largestImpact.textContent = (this.largestImpactEnergy / 4.184e12).toFixed(2); // Convert to kilotons
-    if (avgImpact) avgImpact.textContent = this.impactCount > 0 ? (this.totalImpactEnergy / this.impactCount / 4.184e12).toFixed(2) : '0';
+    // Update UI elements using cached references
+    const ce = this.cachedElements;
+    if (ce.fps) ce.fps.textContent = this.currentFps;
+    if (ce.objectCount) ce.objectCount.textContent = objectCount;
+    if (ce.memoryUsage) ce.memoryUsage.textContent = memoryUsage;
+    if (ce.gravityMode) ce.gravityMode.textContent = this.realistic ? 'Realistic' : 'Simple';
+    if (ce.atmosphereMode) ce.atmosphereMode.textContent = this.showAtmosphere ? 'On' : 'Off';
+    if (ce.moonGravityMode) ce.moonGravityMode.textContent = this.showMoon ? 'On' : 'Off';
+    if (ce.totalEnergy) ce.totalEnergy.textContent = this.totalImpactEnergy.toExponential(2);
+    if (ce.largestImpact) ce.largestImpact.textContent = (this.largestImpactEnergy / 4.184e12).toFixed(2);
+    if (ce.avgImpact) ce.avgImpact.textContent = this.impactCount > 0 ? (this.totalImpactEnergy / this.impactCount / 4.184e12).toFixed(2) : '0';
   }
 
   resetScene() {
+    // Clean up meteors with proper disposal
     this.meteors.forEach(m=>{ 
-      if(m.mesh) this.scene.remove(m.mesh); 
-      if(m.fireTrail) this.scene.remove(m.fireTrail);
+      if(m.mesh) {
+        this.scene.remove(m.mesh);
+        if(m.mesh.geometry) m.mesh.geometry.dispose();
+        if(m.mesh.material) m.mesh.material.dispose();
+      }
+      if(m.fireTrail) {
+        this.scene.remove(m.fireTrail);
+        if(m.fireTrail.geometry) m.fireTrail.geometry.dispose();
+        if(m.fireTrail.material) m.fireTrail.material.dispose();
+      }
       if(m.label && m.label.element) m.label.element.remove(); 
     });
     this.meteors = [];
-    this.impactEffects.forEach(e=>{ if(e.mesh) this.scene.remove(e.mesh); });
+    
+    // Clean up impact effects with proper disposal
+    this.impactEffects.forEach(e=>{ 
+      if(e.mesh) {
+        this.scene.remove(e.mesh);
+        if(e.mesh.geometry) e.mesh.geometry.dispose();
+        if(e.mesh.material) e.mesh.material.dispose();
+      }
+    });
     this.impactEffects = [];
+    
+    // Clean up particle systems
     this.particleSystems.forEach(ps=>{ 
       if(ps.type === 'high_effort' && ps.group) {
         this.scene.remove(ps.group);
+        // Dispose of all children in the group
+        ps.group.traverse(child => {
+          if(child.geometry) child.geometry.dispose();
+          if(child.material) child.material.dispose();
+        });
       } else if(ps.container && ps.container.parentNode) {
         ps.container.parentNode.removeChild(ps.container);
       }
     });
     this.particleSystems = [];
-    this.gravityVisualizers.forEach(v=>{ this.scene.remove(v.mesh); });
+    
+    // Clean up gravity visualizers
+    this.gravityVisualizers.forEach(v=>{ 
+      this.scene.remove(v.mesh);
+      if(v.mesh.geometry) v.mesh.geometry.dispose();
+      if(v.mesh.material) v.mesh.material.dispose();
+    });
     this.gravityVisualizers = [];
-    this.trajectoryLines.forEach(t=>{ this.scene.remove(t.line); });
+    
+    // Clean up trajectory lines
+    this.trajectoryLines.forEach(t=>{ 
+      this.scene.remove(t.line);
+      if(t.line.geometry) t.line.geometry.dispose();
+      if(t.line.material) t.line.material.dispose();
+    });
     this.trajectoryLines = [];
     
     // Clear Leaflet markers and circles
@@ -3335,13 +3418,17 @@ class App {
     // update aiming line
     const aimingLine = this.scene.getObjectByName && this.scene.getObjectByName('aimingLine');
     if(aimingLine){ const positions = aimingLine.geometry.attributes.position.array; positions[0]=this.camera.position.x; positions[1]=this.camera.position.y; positions[2]=this.camera.position.z; positions[3]=this.cursor.position.x; positions[4]=this.cursor.position.y; positions[5]=this.cursor.position.z; aimingLine.geometry.attributes.position.needsUpdate=true; }
-    // update counters
-    const mc = document.getElementById('meteorCount'); if(mc) mc.innerText = String(this.meteors.length);
+    // update counters using cached elements
+    if (this.cachedElements.meteorCount) {
+      this.cachedElements.meteorCount.innerText = String(this.meteors.length);
+    }
     
     // update simulation time
     const currentTime = Date.now();
     const simTime = (currentTime - this.simulationStartTime) / 1000 * this.simSpeed;
-    const st = document.getElementById('simTime'); if(st) st.innerText = simTime.toFixed(1);
+    if (this.cachedElements.simTime) {
+      this.cachedElements.simTime.innerText = simTime.toFixed(1);
+    }
     
     // update statistics
     this.updateStatistics();
@@ -3547,7 +3634,10 @@ class App {
         }
         if(meteor.label && meteor.label.element && meteor.label.element.parentNode) meteor.label.element.parentNode.removeChild(meteor.label.element);
         const li = this.labels.indexOf(meteor.label); if(li!==-1) this.labels.splice(li,1);
-        this.impactCount++; const ic = document.getElementById('impactCount'); if(ic) ic.innerText = String(this.impactCount);
+        this.impactCount++; 
+        if (this.cachedElements.impactCount) {
+          this.cachedElements.impactCount.innerText = String(this.impactCount);
+        }
         
         // Update stats
         this.updateMeteorStats();
@@ -3561,12 +3651,18 @@ class App {
         effect.mesh.material.opacity = Math.max(0, effect.lifetime * 1.6);
         if (effect.lifetime <= 0) {
           this.scene.remove(effect.mesh);
+          // Dispose of geometry and material to prevent memory leaks
+          if (effect.mesh.geometry) effect.mesh.geometry.dispose();
+          if (effect.mesh.material) effect.mesh.material.dispose();
         }
       } else {
         effect.mesh.scale.addScalar(0.05 * this.simSpeed);
         effect.mesh.material.opacity -= 0.02 * this.simSpeed;
         if (effect.mesh.material.opacity <= 0) {
           this.scene.remove(effect.mesh);
+          // Dispose of geometry and material to prevent memory leaks
+          if (effect.mesh.geometry) effect.mesh.geometry.dispose();
+          if (effect.mesh.material) effect.mesh.material.dispose();
         }
       }
     });
