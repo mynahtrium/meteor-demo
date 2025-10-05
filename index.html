@@ -3,7 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <title>Meteor Impact Simulation</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* Emergency fallback styles */
+    body { 
+      background: #0b1020 !important; 
+      color: #e6eef8 !important; 
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial !important;
+      margin: 0 !important;
+      overflow: hidden !important;
+    }
+    #ui, #cameraFocusUI, #statsUI, #mapUI, #statisticsUI, #quickStatsUI {
+      background: linear-gradient(180deg, rgba(20,24,36,0.9), rgba(12,14,22,0.85)) !important;
+      color: #e6eef8 !important;
+      border-radius: 12px !important;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.6) !important;
+    }
+  </style>
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Leaflet JavaScript -->
@@ -91,24 +107,6 @@
     </div>
   </div>
 
-  <!-- Keyboard Shortcuts Help (Top Right) -->
-  <div id="helpUI">
-    <div class="help-header">
-      <h3>Keyboard Shortcuts</h3>
-      <button id="toggleHelp" class="help-toggle">Collapse</button>
-    </div>
-    <div id="shortcuts" class="shortcuts-content">
-      <div><kbd>Space</kbd> - Fire Meteor</div>
-      <div><kbd>R</kbd> - Reset Scene</div>
-      <div><kbd>P</kbd> - Pause/Resume</div>
-      <div><kbd>E</kbd> - Focus Earth</div>
-      <div><kbd>M</kbd> - Focus Moon</div>
-      <div><kbd>T</kbd> - Focus Meteor</div>
-      <div><kbd>F</kbd> - Free Camera</div>
-      <div><kbd>G</kbd> - Toggle Gravity</div>
-    </div>
-  </div>
-
   <div id="ui">
     <label>Simulation Speed:</label>
     <div class="speed-control">
@@ -132,23 +130,20 @@
     <div class="button-row">
       <button id="reset">Reset</button>
       <button id="pause">Pause</button>
-      <button id="toggleAiming">Hide Aiming</button>
     </div>
     <button id="fire">Fire</button>
     <hr>
 
     <label>NASA API Key:</label>
-    <input type="text" id="apiKey" placeholder="Enter your key" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <input type="password" id="apiKey" placeholder="Enter your key" autocomplete="on" autocorrect="off" autocapitalize="off" spellcheck="false">
     <button id="fetch">Fetch Asteroid List</button>
     <button id="loadMore">Load More Asteroids</button>
 
     <label>Select Asteroid:</label>
     <select id="asteroidSelect"></select>
     <button id="selectAsteroid">Select Asteroid</button>
-    <button id="createOrbit">Create Orbital Object</button>
 
     <label>Physics</label>
-    <button id="toggleRealism">Enable Realistic Physics</button>
     <button id="toggleAtmosphere">Show Atmosphere</button>
     <button id="toggleMoon">Show Moon</button>
     <button id="toggleGravityViz">Show Gravity Fields</button>

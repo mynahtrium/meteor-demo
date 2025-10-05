@@ -10,86 +10,8 @@ body {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
-  transition: all 0.3s ease;
 }
-canvas { 
-  display: block;
-  transition: opacity 0.5s ease;
-}
-
-/* Global Animation Keyframes */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-}
-
-@keyframes glow {
-  0%, 100% {
-    box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
-  }
-  50% {
-    box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02), 0 0 20px rgba(76, 175, 80, 0.3);
-  }
-}
-
-@keyframes slideInFromTop {
-  from {
-    opacity: 0;
-    transform: translateY(-30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slideInFromLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes slideInFromRight {
-  from {
-    opacity: 0;
-    transform: translateX(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes slideInFromBottom {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+canvas { display:block; }
 
 /* Quick Stats Bar (Top Center) */
 #quickStatsUI {
@@ -107,13 +29,6 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
-  animation: slideInFromTop 0.6s ease-out;
-  transition: all 0.3s ease;
-}
-
-#quickStatsUI:hover {
-  transform: translateX(-50%) translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 #quickStatsUI .stat-item {
@@ -121,13 +36,6 @@ canvas {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-#quickStatsUI .stat-item:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
 }
 
 #quickStatsUI .stat-label {
@@ -142,13 +50,6 @@ canvas {
   color: #4CAF50;
   font-weight: 700;
   text-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
-  transition: all 0.3s ease;
-  animation: pulse 2s infinite;
-}
-
-#quickStatsUI .stat-value:hover {
-  text-shadow: 0 0 12px rgba(76, 175, 80, 0.6);
-  transform: scale(1.1);
 }
 
 /* Keyboard Shortcuts Help (Top Right, below Camera Focus) */
@@ -241,13 +142,6 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
-  animation: slideInFromRight 0.6s ease-out 0.1s both;
-  transition: all 0.3s ease;
-}
-
-#cameraFocusUI:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 #cameraFocusUI h3 {
@@ -271,35 +165,11 @@ canvas {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-#cameraFocusUI button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transition: left 0.5s ease;
+  transition: all 0.2s ease;
 }
 
 #cameraFocusUI button:hover {
   filter: brightness(1.08);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-#cameraFocusUI button:hover::before {
-  left: 100%;
-}
-
-#cameraFocusUI button:active {
-  transform: translateY(0);
-  transition: transform 0.1s ease;
 }
 
 /* Stats UI (Bottom Left) */
@@ -316,13 +186,6 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
-  animation: slideInFromLeft 0.6s ease-out 0.2s both;
-  transition: all 0.3s ease;
-}
-
-#statsUI:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 #statsUI h3 {
@@ -335,26 +198,11 @@ canvas {
   margin-bottom: 4px;
   font-size: 11px;
   color: #b9cfe6;
-  transition: all 0.3s ease;
-  padding: 2px 0;
-  border-radius: 4px;
-}
-
-#meteorStats div:hover {
-  background: rgba(255,255,255,0.05);
-  transform: translateX(5px);
-  color: #cfe6ff;
 }
 
 #meteorStats span {
   color: #e6eef8;
   font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-#meteorStats span:hover {
-  color: #4CAF50;
-  text-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
 }
 
 /* Speed Control Improvements */
@@ -404,12 +252,6 @@ canvas {
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
   transition: all 0.3s ease;
-  animation: slideInFromRight 0.6s ease-out 0.3s both;
-}
-
-#mapUI:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 #mapUI.expanded {
@@ -438,35 +280,11 @@ canvas {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.map-toggle::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transition: left 0.5s ease;
+  transition: all 0.2s ease;
 }
 
 .map-toggle:hover {
   filter: brightness(1.1);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-.map-toggle:hover::before {
-  left: 100%;
-}
-
-.map-toggle:active {
-  transform: translateY(0);
-  transition: transform 0.1s ease;
 }
 
 .map-container {
@@ -477,12 +295,6 @@ canvas {
   background: #000;
   margin-bottom: 8px;
   overflow: hidden;
-  transition: all 0.3s ease;
-}
-
-.map-container:hover {
-  border-color: rgba(76, 175, 80, 0.5);
-  box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);
 }
 
 #mapUI.expanded .map-container {
@@ -502,27 +314,9 @@ canvas {
   color: #b9cfe6;
 }
 
-#mapInfo div {
-  transition: all 0.3s ease;
-  padding: 2px 0;
-  border-radius: 4px;
-}
-
-#mapInfo div:hover {
-  background: rgba(255,255,255,0.05);
-  transform: translateX(3px);
-  color: #cfe6ff;
-}
-
 #mapInfo span {
   color: #e6eef8;
   font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-#mapInfo span:hover {
-  color: #4CAF50;
-  text-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
 }
 
 /* Statistics UI (Bottom Left) */
@@ -539,13 +333,6 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
-  animation: slideInFromRight 0.6s ease-out 0.4s both;
-  transition: all 0.3s ease;
-}
-
-#statisticsUI:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
 }
 
 #statisticsUI h3 {
@@ -572,26 +359,11 @@ canvas {
   color: #b9cfe6;
   display: flex;
   justify-content: space-between;
-  transition: all 0.3s ease;
-  padding: 2px 0;
-  border-radius: 4px;
-}
-
-.stat-group div:hover {
-  background: rgba(255,255,255,0.05);
-  transform: translateX(3px);
-  color: #cfe6ff;
 }
 
 .stat-group span {
   color: #e6eef8;
   font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-.stat-group span:hover {
-  color: #4CAF50;
-  text-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
 }
 
 
@@ -611,33 +383,6 @@ canvas {
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);
   backdrop-filter: blur(6px) saturate(120%);
-  animation: slideInFromLeft 0.6s ease-out 0.5s both;
-  transition: all 0.3s ease;
-}
-
-#ui:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);
-}
-
-/* Custom scrollbar for UI */
-#ui::-webkit-scrollbar {
-  width: 6px;
-}
-
-#ui::-webkit-scrollbar-track {
-  background: rgba(255,255,255,0.1);
-  border-radius: 3px;
-}
-
-#ui::-webkit-scrollbar-thumb {
-  background: rgba(76, 175, 80, 0.6);
-  border-radius: 3px;
-  transition: all 0.3s ease;
-}
-
-#ui::-webkit-scrollbar-thumb:hover {
-  background: rgba(76, 175, 80, 0.8);
 }
 
 #ui label { display: block; margin: 5px 0 3px; font-weight: 600; color: #cfe6ff; font-size: 11px; }
@@ -648,14 +393,6 @@ canvas {
   border-radius: 6px; 
   border: none; 
   box-sizing: border-box; 
-  transition: all 0.3s ease;
-}
-
-#ui input:focus, #ui select:focus {
-  outline: none;
-  border: 2px solid #4CAF50;
-  box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
-  transform: translateY(-1px);
 }
 
 #ui .small {
@@ -670,16 +407,7 @@ canvas {
   border: none;
   box-sizing: border-box;
 }
-#ui input, #ui select { 
-  background: rgba(255,255,255,0.04); 
-  color: #e6eef8; 
-  transition: all 0.3s ease;
-}
-
-#ui input:hover, #ui select:hover {
-  background: rgba(255,255,255,0.08);
-  transform: translateY(-1px);
-}
+#ui input, #ui select { background: rgba(255,255,255,0.04); color: #e6eef8; }
 #ui button { 
   background: linear-gradient(180deg,#3a4a76,#2b3456); 
   color: white; 
@@ -689,28 +417,11 @@ canvas {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
   border: none;
   border-radius: 6px;
   padding: 5px 10px;
   font-size: 11px;
-  position: relative;
-  overflow: hidden;
-}
-
-#ui button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-  transition: left 0.5s ease;
-}
-
-#ui button:hover::before {
-  left: 100%;
 }
 
 /* Enhanced button styles */
@@ -733,11 +444,6 @@ canvas {
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-#ui button:active {
-  transform: translateY(0);
-  transition: transform 0.1s ease;
-}
-
 .small { font-size: 10px; color: #b9cfe6; margin-bottom: 3px; }
 .button-row { display:flex; gap:3px; margin-bottom: 3px; }
 .button-row button { flex:1; }
@@ -752,12 +458,6 @@ canvas {
   background: linear-gradient(90deg, #3a4a76, #2b3456);
   outline: none;
   transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-.slider:hover {
-  height: 8px;
-  box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
 }
 
 .slider::-webkit-slider-thumb {
@@ -769,19 +469,12 @@ canvas {
   background: linear-gradient(180deg, #4CAF50, #45a049);
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  transition: all 0.3s ease;
-  animation: pulse 2s infinite;
+  transition: all 0.2s ease;
 }
 
 .slider::-webkit-slider-thumb:hover {
-  transform: scale(1.3);
-  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
-  animation: none;
-}
-
-.slider::-webkit-slider-thumb:active {
-  transform: scale(1.1);
-  transition: transform 0.1s ease;
+  transform: scale(1.2);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
 }
 
 .slider::-moz-range-thumb {
@@ -792,14 +485,6 @@ canvas {
   cursor: pointer;
   border: none;
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-  transition: all 0.3s ease;
-  animation: pulse 2s infinite;
-}
-
-.slider::-moz-range-thumb:hover {
-  transform: scale(1.3);
-  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
-  animation: none;
 }
 
 /* Enhanced stat value styling */
@@ -808,28 +493,16 @@ canvas {
   color: #4CAF50;
   transition: all 0.3s ease;
   text-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
-  animation: pulse 2s infinite;
-}
-
-.stat-value:hover, .map-value:hover {
-  text-shadow: 0 0 15px rgba(76, 175, 80, 0.6);
-  transform: scale(1.1);
-  animation: none;
 }
 
 .stat-item, .map-info-item {
   transition: all 0.3s ease;
   padding: 4px 0;
-  cursor: pointer;
 }
 
 .stat-item:hover, .map-info-item:hover {
   transform: translateX(5px);
   color: #cfe6ff;
-  background: rgba(255,255,255,0.05);
-  border-radius: 4px;
-  padding: 4px 8px;
-  margin: 0 -8px;
 }
 
 /* SweetAlert2 custom styling */
@@ -873,21 +546,6 @@ canvas {
   padding: 8px;
   margin-bottom: 8px;
   font-size: 13px;
-  transition: all 0.3s ease;
-  cursor: pointer;
-}
-
-#asteroidSelect:hover {
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(76, 175, 80, 0.5);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-
-#asteroidSelect:focus {
-  outline: none;
-  border-color: #4CAF50;
-  box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
 }
 
 #asteroidSelect option {
@@ -905,26 +563,11 @@ canvas {
   font-size: 12px;
   line-height: 1.4;
   color: #b9cfe6;
-  transition: all 0.3s ease;
-  animation: fadeInUp 0.6s ease-out;
-}
-
-#asteroidData:hover {
-  background: rgba(255,255,255,0.05);
-  border-color: rgba(76, 175, 80, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.4);
 }
 
 #asteroidData b {
   color: #e6eef8;
   font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-#asteroidData b:hover {
-  color: #4CAF50;
-  text-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
 }
 
 /* Leaflet dark theme */
