@@ -424,6 +424,11 @@ canvas {
   margin-bottom: 8px;
 }
 
+.map-controls {
+  display: flex;
+  gap: 6px;
+}
+
 #mapUI h3 {
   margin: 0;
   font-size: 13px;

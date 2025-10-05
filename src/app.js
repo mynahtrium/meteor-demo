@@ -129,6 +129,7 @@ class App {
     // Tsunami and earthquake effects
     this.tsunamiZones = [];
     this.earthquakeEffects = [];
+    this.showTsunamiZones = true;
     
     // Advanced atmosphere layers (extended for much larger atmosphere)
     this.atmosphereLayers = [
@@ -1030,6 +1031,7 @@ class App {
     if (el('selectAsteroid')) el('selectAsteroid').onclick = () => this.selectAsteroid();
     if (el('createOrbit')) el('createOrbit').onclick = () => this.createOrbitalObject();
     if (el('toggleMapSize')) el('toggleMapSize').onclick = () => this.toggleMapSize();
+    if (el('toggleTsunamiZones')) el('toggleTsunamiZones').onclick = () => this.toggleTsunamiZones();
     
     // Camera focus buttons
     if (el('focusEarth')) el('focusEarth').onclick = () => this.focusOnEarth();
@@ -2013,6 +2015,11 @@ class App {
         this.addTsunamiZone(zone);
       });
       
+      // Apply initial visibility setting
+      if (!this.showTsunamiZones) {
+        this.hideTsunamiZonesFromMap();
+      }
+      
       // Tsunami zones loaded successfully
     } catch (error) {
       console.error('Error loading tsunami zones:', error);
@@ -2043,7 +2050,12 @@ class App {
       radius: radius * 1000, // Convert km to meters
       weight: 2,
       dashArray: '10, 5'
-    }).addTo(this.leafletMap);
+    });
+    
+    // Only add to map if tsunami zones are visible
+    if (this.showTsunamiZones) {
+      tsunamiZone.addTo(this.leafletMap);
+    }
     
     // Add popup
     tsunamiZone.bindPopup(`
@@ -2056,6 +2068,45 @@ class App {
     `);
     
     this.tsunamiZones.push(tsunamiZone);
+  }
+
+  // Toggle tsunami zones visibility
+  toggleTsunamiZones() {
+    this.showTsunamiZones = !this.showTsunamiZones;
+    
+    if (this.showTsunamiZones) {
+      this.showTsunamiZonesOnMap();
+    } else {
+      this.hideTsunamiZonesFromMap();
+    }
+    
+    // Update button text
+    const button = document.getElementById('toggleTsunamiZones');
+    if (button) {
+      button.textContent = this.showTsunamiZones ? 'Hide Tsunami' : 'Show Tsunami';
+    }
+  }
+
+  // Show tsunami zones on map
+  showTsunamiZonesOnMap() {
+    if (!this.leafletMap) return;
+    
+    this.tsunamiZones.forEach(zone => {
+      if (!this.leafletMap.hasLayer(zone)) {
+        zone.addTo(this.leafletMap);
+      }
+    });
+  }
+
+  // Hide tsunami zones from map
+  hideTsunamiZonesFromMap() {
+    if (!this.leafletMap) return;
+    
+    this.tsunamiZones.forEach(zone => {
+      if (this.leafletMap.hasLayer(zone)) {
+        this.leafletMap.removeLayer(zone);
+      }
+    });
   }
 
   // Calculate earthquake effects after meteor impact
