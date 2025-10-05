@@ -10,6 +10,26 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
+  <!-- Quick Stats Bar (Top Center) -->
+  <div id="quickStatsUI">
+    <div class="stat-item">
+      <span class="stat-label">Active Meteors:</span>
+      <span class="stat-value" id="meteorCount">0</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Total Impacts:</span>
+      <span class="stat-value" id="impactCount">0</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Last Impact Energy:</span>
+      <span class="stat-value" id="impactEnergy">-</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Simulation Time:</span>
+      <span class="stat-value" id="simTime">0.0s</span>
+    </div>
+  </div>
+
   <!-- Camera Focus UI (Top Right) -->
   <div id="cameraFocusUI">
     <h3>Camera Focus</h3>
@@ -114,12 +134,6 @@
       <button id="pause">Pause</button>
       <button id="toggleAiming">Hide Aiming</button>
       <button id="fire">Fire</button>
-    </div>
-    <div class="counters">
-      <div>Active Meteors: <span id="meteorCount">0</span></div>
-      <div>Total Impacts: <span id="impactCount">0</span></div>
-      <div>Last Impact Energy: <span id="impactEnergy">-</span></div>
-      <div>Simulation Time: <span id="simTime">0.0s</span></div>
     </div>
     <hr>
 
