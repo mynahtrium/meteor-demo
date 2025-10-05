@@ -2,97 +2,99 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Meteor Impact Simulation</title>
   <link rel="stylesheet" href="styles.css">
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Font Awesome for better icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts for better typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Animate.css for smooth animations -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+  <!-- AOS (Animate On Scroll) for scroll animations -->
+  <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+  <!-- SweetAlert2 for better alerts and modals -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Chart.js for data visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Leaflet JavaScript -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- AOS JavaScript -->
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+  <!-- GSAP for advanced animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
-<body>
+<body onkeydown="return false;" onkeyup="return false;" style="overflow: hidden; height: 100vh; margin: 0; padding: 0;">
   <!-- Camera Focus UI (Top Right) -->
-  <div id="cameraFocusUI">
-    <h3>Camera Focus</h3>
-    <button id="focusEarth">Focus Earth</button>
-    <button id="focusMoon">Focus Moon</button>
-    <button id="focusMeteor">Focus Last Meteor</button>
-    <button id="focusFree">Free Camera</button>
+  <div id="cameraFocusUI" class="animate__animated animate__fadeInRight" data-aos="fade-left" data-aos-duration="800">
+    <h3><i class="fas fa-video"></i> Camera Focus</h3>
+    <button id="focusEarth" class="animate__animated animate__pulse animate__infinite animate__slower"><i class="fas fa-globe"></i> Focus Earth</button>
+    <button id="focusMoon"><i class="fas fa-moon"></i> Focus Moon</button>
+    <button id="focusMeteor"><i class="fas fa-meteor"></i> Focus Last Meteor</button>
+    <button id="focusFree"><i class="fas fa-expand-arrows-alt"></i> Free Camera</button>
   </div>
 
   <!-- Stats UI (Bottom Left) -->
-  <div id="statsUI">
-    <h3>Last Meteor Stats</h3>
+  <div id="statsUI" class="animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-duration="1000">
+    <h3><i class="fas fa-chart-line"></i> Last Meteor Stats</h3>
     <div id="meteorStats">
-      <div>Speed: <span id="lastSpeed">-</span> m/s</div>
-      <div>Size: <span id="lastSize">-</span> m</div>
-      <div>Mass: <span id="lastMass">-</span> kg</div>
-      <div>Energy: <span id="lastEnergy">-</span> J</div>
-      <div>Status: <span id="lastStatus">-</span></div>
+      <div class="stat-item animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="100"><i class="fas fa-tachometer-alt"></i> Speed: <span id="lastSpeed" class="stat-value">-</span> m/s</div>
+      <div class="stat-item animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="200"><i class="fas fa-ruler"></i> Size: <span id="lastSize" class="stat-value">-</span> m</div>
+      <div class="stat-item animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="300"><i class="fas fa-weight"></i> Mass: <span id="lastMass" class="stat-value">-</span> kg</div>
+      <div class="stat-item animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="400"><i class="fas fa-bolt"></i> Energy: <span id="lastEnergy" class="stat-value">-</span> J</div>
+      <div class="stat-item animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="500"><i class="fas fa-info-circle"></i> Status: <span id="lastStatus" class="stat-value">-</span></div>
     </div>
   </div>
 
   <!-- Google Maps UI (Bottom Right) -->
-  <div id="mapUI">
+  <div id="mapUI" class="animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-duration="1200">
     <div class="map-header">
-      <h3>Impact Map</h3>
-      <button id="toggleMapSize" class="map-toggle">Expand</button>
+      <h3><i class="fas fa-map-marked-alt"></i> Impact Map</h3>
+      <button id="toggleMapSize" class="map-toggle animate__animated animate__pulse animate__infinite animate__slower"><i class="fas fa-expand"></i> Expand</button>
     </div>
     <div id="googleMap" class="map-container"></div>
     <div id="mapInfo">
-      <div>Lat: <span id="impactLat">-</span>°</div>
-      <div>Lon: <span id="impactLon">-</span>°</div>
-      <div>Energy: <span id="mapEnergy">-</span> kt</div>
-      <div>Blast Radius: <span id="blastRadius">-</span> km</div>
+      <div class="map-info-item animate__animated animate__fadeInRight" data-aos="fade-left" data-aos-delay="100"><i class="fas fa-map-pin"></i> Lat: <span id="impactLat" class="map-value">-</span>°</div>
+      <div class="map-info-item animate__animated animate__fadeInRight" data-aos="fade-left" data-aos-delay="200"><i class="fas fa-map-pin"></i> Lon: <span id="impactLon" class="map-value">-</span>°</div>
+      <div class="map-info-item animate__animated animate__fadeInRight" data-aos="fade-left" data-aos-delay="300"><i class="fas fa-bomb"></i> Energy: <span id="mapEnergy" class="map-value">-</span> kt</div>
+      <div class="map-info-item animate__animated animate__fadeInRight" data-aos="fade-left" data-aos-delay="400"><i class="fas fa-circle"></i> Blast Radius: <span id="blastRadius" class="map-value">-</span> km</div>
     </div>
   </div>
 
   <!-- Statistics UI (Bottom Left) -->
-  <div id="statisticsUI">
-    <h3>Simulation Statistics</h3>
+  <div id="statisticsUI" class="animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-duration="1400">
+    <h3><i class="fas fa-chart-bar"></i> Simulation Statistics</h3>
     <div id="simulationStats">
-      <div class="stat-group">
-        <h4>Performance</h4>
-        <div>FPS: <span id="fps">60</span></div>
-        <div>Objects: <span id="objectCount">0</span></div>
-        <div>Memory: <span id="memoryUsage">0</span> MB</div>
+      <div class="stat-group animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="100">
+        <h4><i class="fas fa-tachometer-alt"></i> Performance</h4>
+        <div><i class="fas fa-video"></i> FPS: <span id="fps" class="stat-value">60</span></div>
+        <div><i class="fas fa-cubes"></i> Objects: <span id="objectCount" class="stat-value">0</span></div>
+        <div><i class="fas fa-memory"></i> Memory: <span id="memoryUsage" class="stat-value">0</span> MB</div>
       </div>
-      <div class="stat-group">
-        <h4>Physics</h4>
-        <div>Gravity: <span id="gravityMode">Simple</span></div>
-        <div>Atmosphere: <span id="atmosphereMode">On</span></div>
-        <div>Moon Gravity: <span id="moonGravityMode">On</span></div>
+      <div class="stat-group animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="200">
+        <h4><i class="fas fa-atom"></i> Physics</h4>
+        <div><i class="fas fa-globe"></i> Gravity: <span id="gravityMode" class="stat-value">Simple</span></div>
+        <div><i class="fas fa-cloud"></i> Atmosphere: <span id="atmosphereMode" class="stat-value">On</span></div>
+        <div><i class="fas fa-moon"></i> Moon Gravity: <span id="moonGravityMode" class="stat-value">On</span></div>
       </div>
-      <div class="stat-group">
-        <h4>Impacts</h4>
-        <div>Total Energy: <span id="totalEnergy">0</span> J</div>
-        <div>Largest Impact: <span id="largestImpact">0</span> kt</div>
-        <div>Avg Impact: <span id="avgImpact">0</span> kt</div>
+      <div class="stat-group animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-delay="300">
+        <h4><i class="fas fa-bomb"></i> Impacts</h4>
+        <div><i class="fas fa-bolt"></i> Total Energy: <span id="totalEnergy" class="stat-value">0</span> J</div>
+        <div><i class="fas fa-fire"></i> Largest Impact: <span id="largestImpact" class="stat-value">0</span> kt</div>
+        <div><i class="fas fa-chart-line"></i> Avg Impact: <span id="avgImpact" class="stat-value">0</span> kt</div>
       </div>
     </div>
   </div>
 
-  <!-- Keyboard Shortcuts Help (Top Right) -->
-  <div id="helpUI">
-    <div class="help-header">
-      <h3>Keyboard Shortcuts</h3>
-      <button id="toggleHelp" class="help-toggle">Collapse</button>
-    </div>
-    <div id="shortcuts" class="shortcuts-content">
-      <div><kbd>Space</kbd> - Fire Meteor</div>
-      <div><kbd>R</kbd> - Reset Scene</div>
-      <div><kbd>P</kbd> - Pause/Resume</div>
-      <div><kbd>E</kbd> - Focus Earth</div>
-      <div><kbd>M</kbd> - Focus Moon</div>
-      <div><kbd>T</kbd> - Focus Meteor</div>
-      <div><kbd>F</kbd> - Free Camera</div>
-      <div><kbd>G</kbd> - Toggle Gravity</div>
-    </div>
-  </div>
 
-  <div id="ui">
-    <label>Simulation Speed:</label>
-    <div class="speed-control">
-      <input type="range" id="simSpeed" min="0.01" max="10" step="0.01" value="1">
+  <div id="ui" class="animate__animated animate__fadeInLeft" data-aos="fade-right" data-aos-duration="1000">
+    <label><i class="fas fa-clock"></i> Simulation Speed:</label>
+    <div class="speed-control animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-delay="100">
+      <input type="range" id="simSpeed" min="0.01" max="10" step="0.01" value="1" class="slider">
       <input type="number" id="simSpeedInput" min="0.01" max="1000" step="0.01" value="1" placeholder="Enter speed">
       <div class="speed-labels">
         <span>0.01x</span>
@@ -102,48 +104,123 @@
       <div class="small">x <span id="simSpeedVal">1.00</span></div>
     </div>
 
-    <label>Meteor Speed</label>
-    <div class="speed-control">
-      <input type="range" id="speed" min="0.01" max="0.2" step="0.01" value="0.05">
+    <label><i class="fas fa-rocket"></i> Meteor Speed</label>
+    <div class="speed-control animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-delay="200">
+      <input type="range" id="speed" min="0.01" max="0.2" step="0.01" value="0.05" class="slider">
       <input type="number" id="speedInput" min="0.01" max="10" step="0.01" value="0.05" placeholder="Enter speed">
       <div class="small">v <span id="speedVal">0.05</span></div>
     </div>
 
-    <div class="button-row">
-      <button id="reset">Reset</button>
-      <button id="pause">Pause</button>
-      <button id="toggleAiming">Hide Aiming</button>
-      <button id="fire">Fire</button>
+    <div class="button-row animate__animated animate__fadeInUp" data-aos="fade-up" data-aos-delay="300">
+      <button id="reset" class="btn-primary"><i class="fas fa-redo"></i> Reset</button>
+      <button id="pause" class="btn-secondary"><i class="fas fa-pause"></i> Pause</button>
+      <button id="toggleAiming" class="btn-secondary"><i class="fas fa-crosshairs"></i> Hide Aiming</button>
     </div>
     <div class="counters">
-      <div>Active Meteors: <span id="meteorCount">0</span></div>
-      <div>Total Impacts: <span id="impactCount">0</span></div>
-      <div>Last Impact Energy: <span id="impactEnergy">-</span></div>
-      <div>Simulation Time: <span id="simTime">0.0s</span></div>
+      <div><i class="fas fa-meteor"></i> Active Meteors: <span id="meteorCount">0</span></div>
+      <div><i class="fas fa-bomb"></i> Total Impacts: <span id="impactCount">0</span></div>
+      <div><i class="fas fa-bolt"></i> Last Impact Energy: <span id="impactEnergy">-</span></div>
+      <div><i class="fas fa-clock"></i> Simulation Time: <span id="simTime">0.0s</span></div>
     </div>
     <hr>
 
-    <label>NASA API Key:</label>
-    <input type="text" id="apiKey" placeholder="Enter your key" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-    <button id="fetch">Fetch Asteroid List</button>
-  <button id="loadMore">Load More Asteroids</button>
+    <label><i class="fas fa-key"></i> NASA API Key:</label>
+    <input type="text" id="apiKey" placeholder="Enter your key" autocomplete="on" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button id="fetch"><i class="fas fa-download"></i> Fetch Asteroid List</button>
+    <button id="loadMore"><i class="fas fa-plus"></i> Load More Asteroids</button>
 
-    <label>Select Asteroid:</label>
+    <label><i class="fas fa-list"></i> Select Asteroid:</label>
     <select id="asteroidSelect"></select>
-    <button id="selectAsteroid">Select Asteroid</button>
-    <button id="createOrbit">Create Orbital Object</button>
-
-  <label>Physics</label>
-  <button id="toggleRealism">Enable Realistic Physics</button>
-  <button id="toggleAtmosphere">Show Atmosphere</button>
-  <button id="toggleMoon">Show Moon</button>
-    <button id="toggleGravityViz">Show Gravity Fields</button>
-  <button id="highResTex">Load High-res Earth Texture</button>
-  <label style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
-  <input type="file" id="uploadTex" accept="image/*" autocomplete="off">
-
+    <button id="selectAsteroid"><i class="fas fa-check"></i> Select Asteroid</button>
+    <button id="createOrbit"><i class="fas fa-satellite"></i> Create Orbital Object</button>
     <div id="asteroidData"></div>
   </div>
+
+  <!-- Initialize JavaScript Libraries -->
+  <script>
+    // Initialize AOS (Animate On Scroll)
+    AOS.init({
+      duration: 800,
+      easing: 'ease-in-out',
+      once: true,
+      offset: 50
+    });
+
+    // Initialize GSAP animations
+    gsap.registerPlugin();
+
+    // Add smooth hover animations for buttons
+    document.addEventListener('DOMContentLoaded', function() {
+      // Animate buttons on hover
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(button => {
+        button.addEventListener('mouseenter', function() {
+          gsap.to(this, {scale: 1.05, duration: 0.2, ease: "power2.out"});
+        });
+        button.addEventListener('mouseleave', function() {
+          gsap.to(this, {scale: 1, duration: 0.2, ease: "power2.out"});
+        });
+      });
+
+      // Animate stat values when they change
+      const statValues = document.querySelectorAll('.stat-value, .map-value');
+      statValues.forEach(stat => {
+        const observer = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList' || mutation.type === 'characterData') {
+              gsap.fromTo(stat, 
+                {scale: 1.2, color: '#ff6b6b'}, 
+                {scale: 1, color: '#e6eef8', duration: 0.5, ease: "power2.out"}
+              );
+            }
+          });
+        });
+        observer.observe(stat, {childList: true, characterData: true, subtree: true});
+      });
+
+      // Add loading animation
+      gsap.fromTo("body", 
+        {opacity: 0}, 
+        {opacity: 1, duration: 1, ease: "power2.out"}
+      );
+    });
+
+    // Enhanced alert function using SweetAlert2
+    function showEnhancedAlert(title, text, icon = 'info') {
+      return Swal.fire({
+        title: title,
+        text: text,
+        icon: icon,
+        background: '#1a1f2e',
+        color: '#e6eef8',
+        confirmButtonColor: '#3a4a76',
+        confirmButtonText: 'OK',
+        customClass: {
+          popup: 'swal-popup-custom'
+        }
+      });
+    }
+
+    // Enhanced confirmation dialog
+    function showConfirmation(title, text, confirmText = 'Yes', cancelText = 'No') {
+      return Swal.fire({
+        title: title,
+        text: text,
+        icon: 'question',
+        background: '#1a1f2e',
+        color: '#e6eef8',
+        showCancelButton: true,
+        confirmButtonColor: '#3a4a76',
+        cancelButtonColor: '#d33',
+        confirmButtonText: confirmText,
+        cancelButtonText: cancelText,
+        customClass: {
+          popup: 'swal-popup-custom'
+        }
+      });
+    }
+  </script>
+
   <script type="module" src="/main.js"></script>
 </body>
 </html>

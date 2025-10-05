@@ -92,8 +92,8 @@ class App {
     // Advanced atmosphere properties (much larger atmosphere)
     this.atmosphereHeight = 500000; // 500km in meters (increased from 200km)
     this.atmosphereHeightScene = this.atmosphereHeight / this.SCENE_SCALE; // scene units
-    this.atmosphereDensity = 1.225; // kg/m³ at sea level
-    this.dragCoefficient = 0.47; // for spherical objects
+    this.atmosphereDensity = 0.5; // kg/m³ at sea level (reduced from 1.225)
+    this.dragCoefficient = 0.1; // for spherical objects (reduced from 0.47)
     this.burnTemperature = 1500; // Kelvin
     this.burnSpeedThreshold = 2000; // m/s - speed at which burning starts
     
@@ -113,11 +113,11 @@ class App {
     
     // Advanced atmosphere layers (extended for much larger atmosphere)
     this.atmosphereLayers = [
-      { name: 'Troposphere', height: 12000, density: 1.225, temperature: 288, windSpeed: 10 },
-      { name: 'Stratosphere', height: 50000, density: 0.088, temperature: 216, windSpeed: 50 },
-      { name: 'Mesosphere', height: 80000, density: 0.001, temperature: 190, windSpeed: 100 },
-      { name: 'Thermosphere', height: 200000, density: 0.0001, temperature: 1000, windSpeed: 200 },
-      { name: 'Exosphere', height: 500000, density: 0.00001, temperature: 1500, windSpeed: 300 }
+      { name: 'Troposphere', height: 12000, density: 0.5, temperature: 288, windSpeed: 10 },
+      { name: 'Stratosphere', height: 50000, density: 0.035, temperature: 216, windSpeed: 50 },
+      { name: 'Mesosphere', height: 80000, density: 0.0004, temperature: 190, windSpeed: 100 },
+      { name: 'Thermosphere', height: 200000, density: 0.00004, temperature: 1000, windSpeed: 200 },
+      { name: 'Exosphere', height: 500000, density: 0.000004, temperature: 1500, windSpeed: 300 }
     ];
     
     // Wind system
@@ -281,6 +281,7 @@ class App {
     if (el('pause')) el('pause').onclick = (e) => { this.paused = !this.paused; e.target.innerText = this.paused ? 'Resume' : 'Pause'; };
     if (el('toggleAiming')) el('toggleAiming').onclick = (e) => { this.showAiming = !this.showAiming; e.target.innerText = this.showAiming ? 'Hide Aiming' : 'Show Aiming'; const aim = this.scene.getObjectByName('aimingLine'); if (aim) aim.visible = this.showAiming; };
     if (el('fire')) el('fire').onclick = () => this.shootMeteor();
+    if (el('fetch')) el('fetch').onclick = () => this.fetchAsteroidList(false);
     if (el('loadMore')) el('loadMore').onclick = () => this.fetchAsteroidList(true);
     if (el('highResTex')) el('highResTex').onclick = () => this.loadHighResEarthTexture();
     const uploadInput = el('uploadTex');
@@ -291,7 +292,6 @@ class App {
     const gravityBtn = el('toggleGravityViz'); if(gravityBtn) gravityBtn.onclick = (e)=>{ this.showGravityViz = !this.showGravityViz; e.target.innerText = this.showGravityViz? 'Hide Gravity Fields' : 'Show Gravity Fields'; this.toggleGravityVisualizers(); };
     if (el('selectAsteroid')) el('selectAsteroid').onclick = () => this.selectAsteroid();
     if (el('toggleMapSize')) el('toggleMapSize').onclick = () => this.toggleMapSize();
-    if (el('toggleHelp')) el('toggleHelp').onclick = () => this.toggleHelp();
     if (el('createOrbit')) el('createOrbit').onclick = () => this.createRandomOrbit();
     
     // Camera focus buttons
@@ -710,41 +710,64 @@ class App {
     return 0;
   }
 
-  // Create fire trail for burning meteors
+  // Create cone-shaped fire trail for burning meteors
   createFireTrail(meteor) {
     if (!meteor.burning || meteor.fireTrail) return;
     
-    const trailGeometry = new THREE.BufferGeometry();
-    const trailMaterial = new THREE.LineBasicMaterial({
+    // Create cone geometry for fire trail
+    const coneGeometry = new THREE.ConeGeometry(0.1, 0.5, 8);
+    const coneMaterial = new THREE.MeshBasicMaterial({
       color: 0xff4400,
       transparent: true,
       opacity: 0.8,
-      linewidth: 3
+      side: THREE.DoubleSide
     });
     
-    const trail = new THREE.Line(trailGeometry, trailMaterial);
-    meteor.fireTrail = trail;
-    meteor.trailPoints = [];
-    this.scene.add(trail);
+    const fireTrail = new THREE.Mesh(coneGeometry, coneMaterial);
+    fireTrail.name = 'fireTrail';
+    meteor.fireTrail = fireTrail;
+    meteor.trailSegments = [];
+    meteor.trailLength = 0;
+    this.scene.add(fireTrail);
   }
 
-  // Update fire trail
+  // Update cone-shaped fire trail
   updateFireTrail(meteor) {
     if (!meteor.fireTrail || !meteor.burning) return;
     
-    // Add current position to trail
-    meteor.trailPoints.push(meteor.mesh.position.clone());
+    const velocity = meteor.physVelocity || meteor.velocity;
+    const speed = velocity.length();
     
-    // Limit trail length
-    const maxTrailLength = 50;
-    if (meteor.trailPoints.length > maxTrailLength) {
-      meteor.trailPoints.shift();
-    }
+    // Calculate trail length based on speed and burn intensity
+    const baseLength = Math.min(2.0, speed * 0.1);
+    const burnIntensity = meteor.burnIntensity || 0;
+    const trailLength = baseLength * (0.5 + burnIntensity * 0.5);
     
-    // Update trail geometry
-    if (meteor.trailPoints.length > 1) {
-      meteor.fireTrail.geometry.setFromPoints(meteor.trailPoints);
-    }
+    // Update cone size based on speed and burn intensity
+    const baseRadius = 0.05 + burnIntensity * 0.1;
+    const radius = Math.min(0.3, baseRadius * (1 + speed * 0.01));
+    
+    // Update cone geometry
+    meteor.fireTrail.geometry.dispose();
+    meteor.fireTrail.geometry = new THREE.ConeGeometry(radius, trailLength, 8);
+    
+    // Position cone behind meteor
+    const direction = velocity.clone().normalize();
+    const trailPosition = meteor.mesh.position.clone().sub(direction.multiplyScalar(trailLength * 0.5));
+    meteor.fireTrail.position.copy(trailPosition);
+    
+    // Orient cone to point opposite to velocity direction
+    meteor.fireTrail.lookAt(meteor.mesh.position.clone().sub(direction.multiplyScalar(trailLength)));
+    
+    // Update material properties based on burn intensity
+    const material = meteor.fireTrail.material;
+    const hue = 0.1 - burnIntensity * 0.1; // Red to orange to yellow
+    material.color.setHSL(hue, 1, 0.5 + burnIntensity * 0.3);
+    material.opacity = 0.6 + burnIntensity * 0.4;
+    
+    // Add flickering effect
+    const flicker = 0.8 + Math.random() * 0.4;
+    material.opacity *= flicker;
   }
 
   // Kepler's equation solver (based on NASA design)
@@ -1301,19 +1324,6 @@ class App {
     }
   }
 
-  // Toggle help UI
-  toggleHelp() {
-    const shortcuts = document.getElementById('shortcuts');
-    const toggleBtn = document.getElementById('toggleHelp');
-    
-    shortcuts.classList.toggle('collapsed');
-    
-    if (shortcuts.classList.contains('collapsed')) {
-      toggleBtn.textContent = 'Expand';
-    } else {
-      toggleBtn.textContent = 'Collapse';
-    }
-  }
 
   // Calculate drag force on meteor with wind effects
   calculateDragForce(meteor) {
@@ -1544,6 +1554,13 @@ class App {
       side: THREE.DoubleSide
     });
     const dome = new THREE.Mesh(domeGeo, domeMat);
+    
+    // Orient dome to face outward from Earth's surface
+    const normal = position.clone().normalize();
+    const quat = new THREE.Quaternion();
+    quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    dome.quaternion.copy(quat);
+    
     explosionGroup.add(dome);
     
     // Create fire particles
@@ -1604,6 +1621,9 @@ class App {
     if (kilotons > 1) {
       this.createMushroomCloud(position, energy);
     }
+    
+    // Create purple shockwave ring
+    this.createShockwaveRing(position, energy);
   }
 
   // Create mushroom cloud effect
@@ -1616,7 +1636,12 @@ class App {
     const cloudHeight = Math.max(0.5, Math.min(5.0, Math.pow(kilotons, 0.4) * 1.5));
     const cloudRadius = Math.max(0.3, Math.min(3.0, Math.pow(kilotons, 0.3) * 1.0));
     
-    // Create stem (vertical column)
+    // Get surface normal for proper orientation
+    const normal = position.clone().normalize();
+    const quat = new THREE.Quaternion();
+    quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    
+    // Create stem (vertical column) - oriented along surface normal
     const stemGeo = new THREE.CylinderGeometry(cloudRadius * 0.3, cloudRadius * 0.5, cloudHeight * 0.6, 8);
     const stemMat = new THREE.MeshBasicMaterial({
       color: 0x666666,
@@ -1624,10 +1649,11 @@ class App {
       opacity: 0.7
     });
     const stem = new THREE.Mesh(stemGeo, stemMat);
-    stem.position.y = cloudHeight * 0.3;
+    stem.quaternion.copy(quat);
+    stem.position.copy(normal.clone().multiplyScalar(cloudHeight * 0.3));
     cloudGroup.add(stem);
     
-    // Create mushroom cap
+    // Create mushroom cap - oriented along surface normal
     const capGeo = new THREE.SphereGeometry(cloudRadius, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
     const capMat = new THREE.MeshBasicMaterial({
       color: 0x888888,
@@ -1636,7 +1662,8 @@ class App {
       side: THREE.DoubleSide
     });
     const cap = new THREE.Mesh(capGeo, capMat);
-    cap.position.y = cloudHeight * 0.8;
+    cap.quaternion.copy(quat);
+    cap.position.copy(normal.clone().multiplyScalar(cloudHeight * 0.8));
     cloudGroup.add(cap);
     
     // Create smoke particles
@@ -1697,6 +1724,57 @@ class App {
     });
   }
 
+  // Create purple shockwave ring effect
+  createShockwaveRing(position, energy) {
+    const kilotons = energy / 4.184e12;
+    const ringGroup = new THREE.Group();
+    ringGroup.position.copy(position);
+    
+    // Calculate ring size based on energy
+    const baseRadius = Math.max(0.2, Math.min(3.0, Math.pow(kilotons, 0.25) * 0.8));
+    
+    // Get surface normal for proper orientation
+    const normal = position.clone().normalize();
+    const quat = new THREE.Quaternion();
+    quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    
+    // Create ring geometry
+    const ringGeo = new THREE.RingGeometry(baseRadius * 0.8, baseRadius, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x8B00FF, // Purple color
+      transparent: true,
+      opacity: 0.8,
+      side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.quaternion.copy(quat);
+    ringGroup.add(ring);
+    
+    this.scene.add(ringGroup);
+    
+    // Add to explosion effects for animation
+    this.explosionEffects.push({
+      group: ringGroup,
+      ring: ring,
+      lifetime: 2.0,
+      maxLifetime: 2.0,
+      baseRadius: baseRadius,
+      energy: energy,
+      type: 'shockwave'
+    });
+  }
+
+  // Update Earth rotation
+  updateEarthRotation() {
+    const earth = this.scene.children.find(c => c.geometry && c.geometry.type === 'SphereGeometry' && c.name !== 'moon');
+    if (earth) {
+      // Earth rotates once every 24 hours (86400 seconds)
+      // Convert to scene time: 86400 seconds * simSpeed
+      const rotationSpeed = (2 * Math.PI) / (86400 * this.simSpeed);
+      earth.rotation.y += rotationSpeed * 0.02; // 0.02 is the frame time
+    }
+  }
+
   // Update explosion effects
   updateExplosionEffects() {
     // Iterate backwards to safely remove items
@@ -1719,8 +1797,7 @@ class App {
         const hue = 0.1 - progress * 0.1; // Red to yellow
         effect.dome.material.color.setHSL(hue, 1, 0.5);
         
-        // Rotate with Earth's rotation (simplified)
-        effect.dome.rotation.y += 0.001 * this.simSpeed;
+        // Dome is already properly oriented to Earth's surface, no additional rotation needed
       }
       
       // Update mushroom cloud
@@ -1745,6 +1822,8 @@ class App {
           effect.cap.scale.x = spreadFactor;
           effect.cap.scale.z = spreadFactor;
         }
+        
+        // Mushroom cloud is already properly oriented to Earth's surface, no additional rotation needed
         
         // Fade cloud out over time
         const opacity = (1 - progress) * 0.6;
@@ -1774,10 +1853,22 @@ class App {
         
         effect.particles.geometry.attributes.position.needsUpdate = true;
         effect.particles.geometry.attributes.lifetime.needsUpdate = true;
-        
-        // Fade particles
+      }
+      
+      // Update shockwave ring
+      if (effect.type === 'shockwave') {
         const progress = 1 - (effect.lifetime / effect.maxLifetime);
-        effect.particles.material.opacity = (1 - progress) * 0.8;
+        
+        // Scale ring outward over time
+        const scale = 1 + progress * 3;
+        effect.ring.scale.setScalar(scale);
+        
+        // Fade ring out
+        effect.ring.material.opacity = (1 - progress) * 0.8;
+        
+        // Add pulsing effect
+        const pulse = 0.8 + Math.sin(progress * Math.PI * 4) * 0.2;
+        effect.ring.material.opacity *= pulse;
       }
       
       // Remove if expired
@@ -2164,7 +2255,11 @@ class App {
   }
 
   resetScene() {
-    this.meteors.forEach(m=>{ if(m.mesh) this.scene.remove(m.mesh); if(m.label && m.label.element) m.label.element.remove(); });
+    this.meteors.forEach(m=>{ 
+      if(m.mesh) this.scene.remove(m.mesh); 
+      if(m.fireTrail) this.scene.remove(m.fireTrail);
+      if(m.label && m.label.element) m.label.element.remove(); 
+    });
     this.meteors = [];
     this.impactEffects.forEach(e=>{ if(e.mesh) this.scene.remove(e.mesh); });
     this.impactEffects = [];
@@ -2247,6 +2342,9 @@ class App {
     
     // update moon orbit
     this.updateMoon();
+
+    // update Earth rotation
+    this.updateEarthRotation();
 
     // update camera focus
     this.updateCameraFocus();
@@ -2385,7 +2483,7 @@ class App {
         
         // Add atmospheric drag in simple mode
         if(altitude < this.atmosphereHeight) {
-          const dragAccel = meteor.velocity.clone().normalize().multiplyScalar(-0.01 * this.simSpeed);
+          const dragAccel = meteor.velocity.clone().normalize().multiplyScalar(-0.002 * this.simSpeed);
           meteor.velocity.add(dragAccel);
         }
         
@@ -2431,6 +2529,9 @@ class App {
         }catch(e){ console.error('impact energy calc', e); const ie = document.getElementById('impactEnergy'); if(ie) ie.innerText = '-'; }
         
         this.scene.remove(meteor.mesh);
+        if(meteor.fireTrail) {
+          this.scene.remove(meteor.fireTrail);
+        }
         if(meteor.label && meteor.label.element && meteor.label.element.parentNode) meteor.label.element.parentNode.removeChild(meteor.label.element);
         const li = this.labels.indexOf(meteor.label); if(li!==-1) this.labels.splice(li,1);
         this.impactCount++; const ic = document.getElementById('impactCount'); if(ic) ic.innerText = String(this.impactCount);
@@ -2506,7 +2607,7 @@ class App {
   // NASA fetchers kept as-is but bound to this
   async fetchAsteroidList(loadMore=false){
     const apiKey = document.getElementById('apiKey')?.value.trim();
-    if(!apiKey) return alert('Enter NASA API key');
+    if(!apiKey) return showEnhancedAlert('API Key Required', 'Please enter your NASA API key to fetch asteroid data.', 'warning');
     if(!loadMore) { this.neoPage = 0; this.asteroidList = []; document.getElementById('asteroidSelect').innerHTML = ''; }
     try{
       const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/browse?page=${this.neoPage||0}&size=20&api_key=${apiKey}`);
@@ -2552,7 +2653,7 @@ class App {
       }
       this.neoPage = (this.neoPage||0) + 1;
       document.getElementById('asteroidData').innerHTML = `Fetched ${this.asteroidList.length} asteroids (page ${this.neoPage})`;
-    }catch(err){ console.error(err); alert('Error fetching asteroids'); }
+    }catch(err){ console.error(err); showEnhancedAlert('Error', 'Failed to fetch asteroid data. Please check your API key and try again.', 'error'); }
   }
 
   async fetchAsteroidDetails(id){
