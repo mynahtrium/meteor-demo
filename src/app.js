@@ -28,10 +28,16 @@ class App {
     this.cameraFocus = 'free'; // 'free', 'earth', 'moon', 'meteor'
     this.focusedMeteor = null;
     this.gravityVisualizers = [];
-    this.explosionEffects = [];
+    this.particleSystems = [];
     this.trajectoryLines = [];
     this.simulationStartTime = Date.now();
     this.lastUpdateTime = Date.now();
+    
+    // Post-processing effects
+    this.effectComposer = null;
+    this.dofPass = null;
+    this.bloomPass = null;
+    this.starField = null;
     
     // Statistics tracking
     this.totalImpactEnergy = 0;
@@ -96,6 +102,10 @@ class App {
     this.dragCoefficient = 0.1; // for spherical objects (reduced from 0.47)
     this.burnTemperature = 1500; // Kelvin
     this.burnSpeedThreshold = 2000; // m/s - speed at which burning starts
+    
+    // Shader materials
+    this.shaderMaterials = {};
+    this.initShaders();
     
     // Enhanced atmosphere physics
     this.seaLevelPressure = 101325; // Pa (Pascals)
@@ -171,38 +181,759 @@ class App {
     });
   }
 
-  init() {
+  // Create starry skybox
+  createStarrySkybox() {
+    const geometry = new THREE.SphereGeometry(500, 60, 40);
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0.0 }
+      },
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        varying vec3 vWorldPosition;
+        
+        // Random function for star generation
+        float random(vec2 st) {
+          return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+        }
+        
+        // Noise function for nebula
+        float noise(vec2 st) {
+          vec2 i = floor(st);
+          vec2 f = fract(st);
+          float a = random(i);
+          float b = random(i + vec2(1.0, 0.0));
+          float c = random(i + vec2(0.0, 1.0));
+          float d = random(i + vec2(1.0, 1.0));
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+        }
+        
+        void main() {
+          vec3 direction = normalize(vWorldPosition);
+          vec2 uv = vec2(
+            atan(direction.z, direction.x) / (2.0 * 3.14159) + 0.5,
+            asin(direction.y) / 3.14159 + 0.5
+          );
+          
+          // Generate stars
+          vec2 starUV = uv * 100.0;
+          vec2 starID = floor(starUV);
+          vec2 starPos = fract(starUV);
+          
+          float star = random(starID);
+          if (star > 0.98) {
+            float starSize = random(starID + 1.0) * 0.1 + 0.01;
+            float starBrightness = random(starID + 2.0) * 0.5 + 0.5;
+            float dist = length(starPos - 0.5);
+            if (dist < starSize) {
+              float twinkle = sin(time * 2.0 + starID.x * 10.0) * 0.3 + 0.7;
+              gl_FragColor = vec4(vec3(1.0) * starBrightness * twinkle, 1.0);
+              return;
+            }
+          }
+          
+          // Generate nebula
+          vec2 nebulaUV = uv * 20.0;
+          float nebula1 = noise(nebulaUV + time * 0.01) * 0.3;
+          float nebula2 = noise(nebulaUV * 2.0 + time * 0.02) * 0.2;
+          float nebula3 = noise(nebulaUV * 4.0 + time * 0.03) * 0.1;
+          
+          vec3 nebulaColor = vec3(
+            0.2 + nebula1 * 0.3,
+            0.1 + nebula2 * 0.2,
+            0.3 + nebula3 * 0.4
+          );
+          
+          // Add some distant galaxies
+          float galaxy = noise(uv * 5.0 + time * 0.005) * 0.1;
+          nebulaColor += vec3(0.1, 0.05, 0.15) * galaxy;
+          
+          gl_FragColor = vec4(nebulaColor, 1.0);
+        }
+      `,
+      side: THREE.BackSide
+    });
+    
+    this.starField = new THREE.Mesh(geometry, material);
+    this.starField.name = 'starField';
+    this.scene.add(this.starField);
+  }
+
+  // Initialize shader materials with ray tracing
+  initShaders() {
+    // Meteor trail shader with ray tracing
+    this.shaderMaterials.meteorTrail = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0.0 },
+        color: { value: new THREE.Color(0xff4400) },
+        opacity: { value: 0.8 },
+        lightPosition: { value: new THREE.Vector3(0, 0, 0) },
+        cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
+        earthPosition: { value: new THREE.Vector3(0, 0, 0) },
+        earthRadius: { value: 1.0 }
+      },
+      vertexShader: `
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform vec3 earthPosition;
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+        varying vec3 vLightDirection;
+        varying vec3 vViewDirection;
+        varying float vDistanceToEarth;
+        
+        void main() {
+          vUv = uv;
+          vPosition = position;
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          vNormal = normalize(normalMatrix * normal);
+          
+          vLightDirection = normalize(lightPosition - vWorldPosition);
+          vViewDirection = normalize(cameraPosition - vWorldPosition);
+          vDistanceToEarth = distance(vWorldPosition, earthPosition);
+          
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform vec3 color;
+        uniform float opacity;
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform vec3 earthPosition;
+        uniform float earthRadius;
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+        varying vec3 vLightDirection;
+        varying vec3 vViewDirection;
+        varying float vDistanceToEarth;
+        
+        // Simple ray-sphere intersection
+        float raySphereIntersect(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, float sphereRadius) {
+          vec3 oc = rayOrigin - sphereCenter;
+          float a = dot(rayDirection, rayDirection);
+          float b = 2.0 * dot(oc, rayDirection);
+          float c = dot(oc, oc) - sphereRadius * sphereRadius;
+          float discriminant = b * b - 4.0 * a * c;
+          
+          if (discriminant < 0.0) return -1.0;
+          return (-b - sqrt(discriminant)) / (2.0 * a);
+        }
+        
+        // Atmospheric scattering approximation
+        vec3 atmosphericScattering(vec3 rayOrigin, vec3 rayDirection, vec3 lightDirection) {
+          float earthHit = raySphereIntersect(rayOrigin, rayDirection, earthPosition, earthRadius);
+          float atmosphereHit = raySphereIntersect(rayOrigin, rayDirection, earthPosition, earthRadius * 1.1);
+          
+          if (earthHit > 0.0) return vec3(0.0); // Hit Earth, no scattering
+          
+          float scatterDistance = atmosphereHit > 0.0 ? atmosphereHit : 100.0;
+          float scatterAmount = 1.0 - exp(-scatterDistance * 0.1);
+          
+          // Rayleigh scattering (blue sky)
+          float cosAngle = dot(rayDirection, lightDirection);
+          float rayleigh = 3.0 / (16.0 * 3.14159) * (1.0 + cosAngle * cosAngle);
+          
+          // Mie scattering (white clouds)
+          float mie = 1.0 / (4.0 * 3.14159) * (1.0 - cosAngle * cosAngle) / 
+                     pow(1.0 + cosAngle * cosAngle - 2.0 * cosAngle, 1.5);
+          
+          vec3 rayleighColor = vec3(0.3, 0.6, 1.0) * rayleigh;
+          vec3 mieColor = vec3(1.0, 1.0, 1.0) * mie * 0.1;
+          
+          return (rayleighColor + mieColor) * scatterAmount;
+        }
+        
+        void main() {
+          // Base fire effect
+          float noise = sin(vUv.x * 10.0 + time * 5.0) * 0.1 + 
+                       sin(vUv.y * 15.0 + time * 3.0) * 0.05;
+          float baseAlpha = (1.0 - vUv.y) * opacity * (0.8 + noise);
+          
+          // Ray tracing lighting
+          vec3 normal = normalize(vNormal);
+          float NdotL = max(0.0, dot(normal, vLightDirection));
+          float NdotV = max(0.0, dot(normal, vViewDirection));
+          
+          // Phong lighting model
+          vec3 reflectDir = reflect(-vLightDirection, normal);
+          float specular = pow(max(0.0, dot(vViewDirection, reflectDir)), 32.0);
+          
+          // Atmospheric scattering
+          vec3 scattering = atmosphericScattering(vWorldPosition, vViewDirection, vLightDirection);
+          
+          // Combine lighting
+          vec3 diffuse = color * NdotL;
+          vec3 specularColor = vec3(1.0, 0.8, 0.6) * specular * 0.5;
+          vec3 ambient = color * 0.2;
+          
+          vec3 finalColor = diffuse + specularColor + ambient + scattering;
+          
+          // Distance-based attenuation
+          float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.1);
+          finalColor *= distanceAttenuation;
+          
+          gl_FragColor = vec4(finalColor, baseAlpha);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide
+    });
+
+    // Explosion shader with ray tracing
+    this.shaderMaterials.explosion = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0.0 },
+        intensity: { value: 1.0 },
+        color1: { value: new THREE.Color(0xff4400) },
+        color2: { value: new THREE.Color(0xffaa00) },
+        color3: { value: new THREE.Color(0xffffff) },
+        lightPosition: { value: new THREE.Vector3(0, 0, 0) },
+        cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
+        earthPosition: { value: new THREE.Vector3(0, 0, 0) },
+        earthRadius: { value: 1.0 }
+      },
+      vertexShader: `
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform vec3 earthPosition;
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+        varying vec3 vLightDirection;
+        varying vec3 vViewDirection;
+        varying float vDistanceToEarth;
+        
+        void main() {
+          vUv = uv;
+          vPosition = position;
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          vNormal = normalize(normalMatrix * normal);
+          
+          vLightDirection = normalize(lightPosition - vWorldPosition);
+          vViewDirection = normalize(cameraPosition - vWorldPosition);
+          vDistanceToEarth = distance(vWorldPosition, earthPosition);
+          
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform float intensity;
+        uniform vec3 color1;
+        uniform vec3 color2;
+        uniform vec3 color3;
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform vec3 earthPosition;
+        uniform float earthRadius;
+        varying vec2 vUv;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        varying vec3 vNormal;
+        varying vec3 vLightDirection;
+        varying vec3 vViewDirection;
+        varying float vDistanceToEarth;
+        
+        // Ray-sphere intersection for shadows
+        float raySphereIntersect(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, float sphereRadius) {
+          vec3 oc = rayOrigin - sphereCenter;
+          float a = dot(rayDirection, rayDirection);
+          float b = 2.0 * dot(oc, rayDirection);
+          float c = dot(oc, oc) - sphereRadius * sphereRadius;
+          float discriminant = b * b - 4.0 * a * c;
+          
+          if (discriminant < 0.0) return -1.0;
+          return (-b - sqrt(discriminant)) / (2.0 * a);
+        }
+        
+        // Shadow calculation
+        float calculateShadow(vec3 worldPos, vec3 lightDir) {
+          float shadow = 1.0;
+          float earthShadow = raySphereIntersect(worldPos, lightDir, earthPosition, earthRadius);
+          if (earthShadow > 0.0 && earthShadow < 100.0) {
+            shadow = 0.3; // Soft shadow
+          }
+          return shadow;
+        }
+        
+        // Volumetric lighting
+        vec3 volumetricLighting(vec3 worldPos, vec3 lightDir, float distance) {
+          float density = 0.1;
+          float scattering = 1.0 - exp(-density * distance);
+          return vec3(1.0, 0.8, 0.6) * scattering * 0.5;
+        }
+        
+        void main() {
+          float dist = length(vUv - 0.5);
+          float pulse = sin(time * 10.0) * 0.1 + 0.9;
+          float heat = 1.0 - smoothstep(0.0, 0.5, dist);
+          
+          // Base explosion colors
+          vec3 color = mix(color1, color2, heat);
+          color = mix(color, color3, heat * heat);
+          
+          // Ray tracing lighting
+          vec3 normal = normalize(vNormal);
+          float NdotL = max(0.0, dot(normal, vLightDirection));
+          float NdotV = max(0.0, dot(normal, vViewDirection));
+          
+          // Shadows
+          float shadow = calculateShadow(vWorldPosition, vLightDirection);
+          
+          // Specular reflection
+          vec3 reflectDir = reflect(-vLightDirection, normal);
+          float specular = pow(max(0.0, dot(vViewDirection, reflectDir)), 64.0);
+          
+          // Volumetric effects
+          vec3 volumetric = volumetricLighting(vWorldPosition, vLightDirection, vDistanceToEarth);
+          
+          // Combine lighting
+          vec3 diffuse = color * NdotL * shadow;
+          vec3 specularColor = vec3(1.0, 1.0, 0.8) * specular * 0.8;
+          vec3 ambient = color * 0.3;
+          
+          vec3 finalColor = diffuse + specularColor + ambient + volumetric;
+          
+          // Distance-based attenuation
+          float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.05);
+          finalColor *= distanceAttenuation;
+          
+          float alpha = heat * intensity * pulse * (1.0 - dist * 2.0);
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide
+    });
+
+    // Compiled atmosphere shader with optimized performance
+    this.shaderMaterials.atmosphere = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0.0 },
+        opacity: { value: 0.4 },
+        color: { value: new THREE.Color(0x87CEEB) },
+        lightPosition: { value: new THREE.Vector3(0, 0, 0) },
+        cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
+        earthPosition: { value: new THREE.Vector3(0, 0, 0) },
+        earthRadius: { value: 1.0 },
+        sunDirection: { value: new THREE.Vector3(0, 0, 1) },
+        atmosphereRadius: { value: 1.15 },
+        rayleighCoeff: { value: new THREE.Vector3(5.8e-6, 1.35e-5, 3.31e-5) },
+        mieCoeff: { value: 2e-5 },
+        mieG: { value: 0.76 },
+        sunIntensity: { value: 25.0 },
+        // Compiled shader optimizations
+        invWavelength: { value: new THREE.Vector3(1.0/0.650, 1.0/0.570, 1.0/0.475) },
+        scale: { value: 1.0 / (1.15 - 1.0) },
+        scaleDepth: { value: 0.25 },
+        scaleOverScaleDepth: { value: 4.0 / (1.15 - 1.0) }
+      },
+      vertexShader: `
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform vec3 earthPosition;
+        uniform vec3 sunDirection;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        varying vec3 vLightDirection;
+        varying vec3 vViewDirection;
+        varying vec3 vSunDirection;
+        varying float vDistanceToEarth;
+        varying float vAtmosphereHeight;
+        
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vPosition = position;
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          
+          vLightDirection = normalize(lightPosition - vWorldPosition);
+          vViewDirection = normalize(cameraPosition - vWorldPosition);
+          vSunDirection = normalize(sunDirection);
+          vDistanceToEarth = distance(vWorldPosition, earthPosition);
+          vAtmosphereHeight = (vDistanceToEarth - 1.0) / 0.1; // Normalized height in atmosphere
+          
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform float opacity;
+        uniform vec3 color;
+        uniform vec3 lightPosition;
+        uniform vec3 cameraPosition;
+        uniform vec3 earthPosition;
+        uniform float earthRadius;
+        uniform float atmosphereRadius;
+        uniform vec3 sunDirection;
+        uniform vec3 rayleighCoeff;
+        uniform float mieCoeff;
+        uniform float mieG;
+        uniform float sunIntensity;
+        uniform vec3 invWavelength;
+        uniform float scale;
+        uniform float scaleDepth;
+        uniform float scaleOverScaleDepth;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        varying vec3 vWorldPosition;
+        varying vec3 vLightDirection;
+        varying vec3 vViewDirection;
+        varying vec3 vSunDirection;
+        varying float vDistanceToEarth;
+        varying float vAtmosphereHeight;
+        
+        const float PI = 3.14159265359;
+        const int NUM_SAMPLES = 8; // Reduced for performance
+        const int NUM_LIGHT_SAMPLES = 4; // Reduced for performance
+        
+        // Optimized ray-sphere intersection
+        float raySphereIntersect(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, float sphereRadius) {
+          vec3 oc = rayOrigin - sphereCenter;
+          float b = 2.0 * dot(oc, rayDirection);
+          float c = dot(oc, oc) - sphereRadius * sphereRadius;
+          float discriminant = b * b - 4.0 * c;
+          
+          if (discriminant < 0.0) return -1.0;
+          return (-b - sqrt(discriminant)) * 0.5;
+        }
+        
+        // Pre-computed Rayleigh phase function
+        float rayleighPhase(float cosAngle) {
+          return 0.0596831 * (1.0 + cosAngle * cosAngle);
+        }
+        
+        // Pre-computed Mie phase function
+        float miePhase(float cosAngle) {
+          return 0.119366 * pow(1.0 + 0.5776 - 1.52 * cosAngle, -1.5);
+        }
+        
+        // Optimized density function
+        float getDensity(float height) {
+          return exp(-height * scale);
+        }
+        
+        // Compiled atmospheric scattering (optimized)
+        vec3 integrateScattering(vec3 rayOrigin, vec3 rayDirection, vec3 sunDir) {
+          float earthHit = raySphereIntersect(rayOrigin, rayDirection, earthPosition, earthRadius);
+          float atmosphereHit = raySphereIntersect(rayOrigin, rayDirection, earthPosition, atmosphereRadius);
+          
+          if (earthHit > 0.0) return vec3(0.0);
+          if (atmosphereHit < 0.0) return vec3(0.0);
+          
+          float start = max(0.0, atmosphereHit);
+          float end = 50.0; // Reduced for performance
+          
+          float stepSize = (end - start) / float(NUM_SAMPLES);
+          vec3 totalRayleigh = vec3(0.0);
+          vec3 totalMie = vec3(0.0);
+          
+          float cosAngle = dot(rayDirection, sunDir);
+          float rayleighPhaseValue = rayleighPhase(cosAngle);
+          float miePhaseValue = miePhase(cosAngle);
+          
+          // Optimized sampling loop
+          for (int i = 0; i < NUM_SAMPLES; i++) {
+            float samplePos = start + float(i) * stepSize;
+            vec3 samplePoint = rayOrigin + rayDirection * samplePos;
+            
+            float height = length(samplePoint - earthPosition) - earthRadius;
+            if (height < 0.0) continue;
+            
+            float density = getDensity(height);
+            float sampleStepSize = stepSize * density;
+            
+            // Simplified light scattering
+            float lightHit = raySphereIntersect(samplePoint, sunDir, earthPosition, earthRadius);
+            
+            if (lightHit < 0.0) {
+              float lightHeight = length(samplePoint + sunDir * 10.0 - earthPosition) - earthRadius;
+              if (lightHeight >= 0.0) {
+                float lightDensity = getDensity(lightHeight);
+                vec3 lightTransmittance = exp(-(rayleighCoeff * lightDensity * 10.0 + vec3(lightDensity * mieCoeff * 10.0)));
+                totalRayleigh += density * sampleStepSize * lightTransmittance;
+                totalMie += density * sampleStepSize * lightTransmittance;
+              }
+            }
+          }
+          
+          vec3 rayleighScattering = totalRayleigh * rayleighCoeff * rayleighPhaseValue * sunIntensity;
+          vec3 mieScattering = totalMie * mieCoeff * miePhaseValue * sunIntensity;
+          
+          return rayleighScattering + mieScattering;
+        }
+        
+        void main() {
+          // Compiled atmospheric scattering
+          vec3 scattering = integrateScattering(cameraPosition, vViewDirection, vSunDirection);
+          
+          // Optimized height-based color
+          float heightFactor = clamp(vAtmosphereHeight, 0.0, 1.0);
+          vec3 skyColor = mix(vec3(0.3, 0.6, 1.0), vec3(1.0, 0.8, 0.6), heightFactor * 0.3);
+          
+          // Simplified fresnel
+          float fresnel = 1.0 - abs(dot(vNormal, vViewDirection));
+          
+          // Reduced noise for performance
+          float noise = sin(vPosition.x * 0.1 + time * 0.5) * 0.05;
+          
+          // Final color composition
+          vec3 finalColor = skyColor + scattering * 1.5;
+          float alpha = (fresnel * 0.3 + 0.7) * opacity * (0.8 + noise);
+          
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `,
+      transparent: true,
+      side: THREE.BackSide
+    });
+
+    // Shockwave shader
+    this.shaderMaterials.shockwave = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0.0 },
+        radius: { value: 1.0 },
+        color: { value: new THREE.Color(0x8B00FF) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform float radius;
+        uniform vec3 color;
+        varying vec2 vUv;
+        
+        void main() {
+          float dist = length(vUv - 0.5);
+          float wave = sin(dist * 20.0 - time * 15.0) * 0.5 + 0.5;
+          float alpha = (1.0 - smoothstep(0.0, radius, dist)) * wave * 0.8;
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide
+    });
+
+      // Particle shader with ray tracing
+      this.shaderMaterials.particle = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0.0 },
+          color: { value: new THREE.Color(0xff6600) },
+          opacity: { value: 1.0 },
+          lightPosition: { value: new THREE.Vector3(0, 0, 0) },
+          cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
+          earthPosition: { value: new THREE.Vector3(0, 0, 0) },
+          earthRadius: { value: 1.0 }
+        },
+        vertexShader: `
+          attribute float size;
+          attribute float alpha;
+          attribute float age;
+          uniform vec3 lightPosition;
+          uniform vec3 cameraPosition;
+          uniform vec3 earthPosition;
+          varying float vAlpha;
+          varying float vAge;
+          varying vec3 vWorldPosition;
+          varying vec3 vLightDirection;
+          varying vec3 vViewDirection;
+          varying float vDistanceToEarth;
+          
+          void main() {
+            vAlpha = alpha;
+            vAge = age;
+            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+            vLightDirection = normalize(lightPosition - vWorldPosition);
+            vViewDirection = normalize(cameraPosition - vWorldPosition);
+            vDistanceToEarth = distance(vWorldPosition, earthPosition);
+            
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = size * (300.0 / -mvPosition.z);
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform float time;
+          uniform vec3 color;
+          uniform float opacity;
+          uniform vec3 lightPosition;
+          uniform vec3 cameraPosition;
+          uniform vec3 earthPosition;
+          uniform float earthRadius;
+          varying float vAlpha;
+          varying float vAge;
+          varying vec3 vWorldPosition;
+          varying vec3 vLightDirection;
+          varying vec3 vViewDirection;
+          varying float vDistanceToEarth;
+          
+          // Ray-sphere intersection for shadows
+          float raySphereIntersect(vec3 rayOrigin, vec3 rayDirection, vec3 sphereCenter, float sphereRadius) {
+            vec3 oc = rayOrigin - sphereCenter;
+            float a = dot(rayDirection, rayDirection);
+            float b = 2.0 * dot(oc, rayDirection);
+            float c = dot(oc, oc) - sphereRadius * sphereRadius;
+            float discriminant = b * b - 4.0 * a * c;
+            
+            if (discriminant < 0.0) return -1.0;
+            return (-b - sqrt(discriminant)) / (2.0 * a);
+          }
+          
+          // Shadow calculation
+          float calculateShadow(vec3 worldPos, vec3 lightDir) {
+            float shadow = 1.0;
+            float earthShadow = raySphereIntersect(worldPos, lightDir, earthPosition, earthRadius);
+            if (earthShadow > 0.0 && earthShadow < 100.0) {
+              shadow = 0.4; // Soft shadow
+            }
+            return shadow;
+          }
+          
+          void main() {
+            float dist = length(gl_PointCoord - 0.5);
+            if (dist > 0.5) discard;
+            
+            // Create flickering effect based on age and time
+            float flicker = sin(vAge * 20.0 + time * 10.0) * 0.1 + 0.9;
+            
+            // Create heat distortion effect
+            float heat = 1.0 - smoothstep(0.0, 0.5, dist);
+            float distortion = sin(dist * 10.0 + time * 5.0) * 0.05;
+            
+            // Ray tracing lighting
+            vec3 normal = vec3(0.0, 0.0, 1.0); // Point sprite normal
+            float NdotL = max(0.0, dot(normal, vLightDirection));
+            float NdotV = max(0.0, dot(normal, vViewDirection));
+            
+            // Shadows
+            float shadow = calculateShadow(vWorldPosition, vLightDirection);
+            
+            // Specular reflection
+            vec3 reflectDir = reflect(-vLightDirection, normal);
+            float specular = pow(max(0.0, dot(vViewDirection, reflectDir)), 16.0);
+            
+            // Combine lighting
+            vec3 diffuse = color * NdotL * shadow;
+            vec3 specularColor = vec3(1.0, 0.8, 0.6) * specular * 0.3;
+            vec3 ambient = color * 0.3;
+            
+            vec3 finalColor = diffuse + specularColor + ambient;
+            
+            // Distance-based attenuation
+            float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.1);
+            finalColor *= distanceAttenuation;
+            
+            float alpha = (1.0 - dist * 2.0) * vAlpha * opacity * flicker;
+            gl_FragColor = vec4(finalColor, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending
+      });
+  }
+
+  // Setup post-processing effects
+  async setupPostProcessing() {
+    try {
+      // Import post-processing modules
+      const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
+      const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js');
+      const { UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js');
+      const { BokehPass } = await import('three/addons/postprocessing/BokehPass.js');
+      
+      // Create effect composer
+      this.effectComposer = new EffectComposer(this.renderer);
+      
+      // Add render pass
+      const renderPass = new RenderPass(this.scene, this.camera);
+      this.effectComposer.addPass(renderPass);
+      
+      // Add bloom pass for glowing effects
+      this.bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.5, // strength
+        0.4, // radius
+        0.85 // threshold
+      );
+      this.effectComposer.addPass(this.bloomPass);
+      
+      // Add depth of field pass
+      this.dofPass = new BokehPass(this.scene, this.camera, {
+        focus: 10.0,
+        aperture: 0.025,
+        maxblur: 0.01,
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+      this.effectComposer.addPass(this.dofPass);
+      
+      console.log('Post-processing effects enabled successfully');
+    } catch (error) {
+      console.warn('Failed to load post-processing effects:', error);
+      console.log('Falling back to standard rendering');
+      this.effectComposer = null;
+    }
+  }
+
+  async init() {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
     this.camera.position.set(0, 3, 15);
     this.scene.add(this.camera);
+    
+    // Create starry skybox
+    this.createStarrySkybox();
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-  this.renderer.setSize(window.innerWidth, window.innerHeight);
-  // Ensure correct color space for loaded textures
-  this.renderer.outputEncoding = THREE.sRGBEncoding;
-  this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  this.renderer.toneMappingExposure = 1.0;
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    // Ensure correct color space for loaded textures
+    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     document.body.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    
+    // Setup post-processing effects
+    await this.setupPostProcessing();
 
     // Earth
     const earthGeo = new THREE.SphereGeometry(this.earthRadius, 32, 32);
-    const earthMat = new THREE.MeshPhongMaterial({ color: 0x2233ff });
+    const earthMat = new THREE.MeshPhongMaterial({ 
+      color: 0x2233ff,
+      shininess: 30,
+      specular: 0x111111
+    });
     const earth = new THREE.Mesh(earthGeo, earthMat);
+    earth.name = 'earth';
     this.scene.add(earth);
     this.createLabel('Earth', new THREE.Vector3(0, this.earthRadius + 0.2, 0));
 
-    // Atmosphere visualization
+    // Atmosphere visualization with shader
     const atmosphereGeo = new THREE.SphereGeometry(this.earthRadius + this.atmosphereHeightScene, 32, 32);
-    const atmosphereMat = new THREE.MeshBasicMaterial({ 
-      color: 0x87CEEB, 
-      transparent: true, 
-      opacity: 0.1,
-      side: THREE.BackSide
-    });
-    const atmosphere = new THREE.Mesh(atmosphereGeo, atmosphereMat);
+    const atmosphere = new THREE.Mesh(atmosphereGeo, this.shaderMaterials.atmosphere);
     atmosphere.name = 'atmosphere';
     this.scene.add(atmosphere);
 
@@ -306,6 +1037,11 @@ class App {
     // attempt to auto-load a local earth texture file if present (project root: earth_texture.jpg)
     try { this.tryLoadLocalEarthTexture(); } catch(e){ /* ignore */ }
     
+    // Make debug function available globally
+    window.debugEarthTexture = () => this.debugEarthTexture();
+    window.togglePostProcessing = () => this.togglePostProcessing();
+    window.adjustBloom = (strength) => this.adjustBloom(strength);
+    
     // Initialize map
     this.initMap();
     
@@ -324,21 +1060,66 @@ class App {
     const localPath = './earth_texture.jpg';
     const loader = new THREE.TextureLoader();
     loader.load(localPath, tex => {
-      const earth = this.scene.children.find(c=>c.geometry && c.geometry.type==='SphereGeometry');
+      const earth = this.scene.getObjectByName('earth');
       if(earth && earth.material){
+        console.log('Found Earth object, applying texture...');
         if(earth.material.color) earth.material.color.setHex(0xffffff);
         tex.encoding = THREE.sRGBEncoding;
         tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
         tex.minFilter = THREE.LinearMipmapLinearFilter;
         tex.magFilter = THREE.LinearFilter;
         tex.generateMipmaps = true;
-        earth.material.map = tex; earth.material.needsUpdate = true;
-        console.log('Loaded local earth texture:', localPath);
+        earth.material.map = tex; 
+        earth.material.needsUpdate = true;
+        console.log('Successfully loaded local earth texture:', localPath);
+        console.log('Earth material after texture load:', earth.material);
+      } else {
+        console.warn('Earth object not found or has no material');
       }
     }, undefined, err => {
       // silent fail if not present or CORS
       console.debug('Local earth texture not found or failed to load:', localPath, err && err.message);
     });
+  }
+
+  // Debug function to manually test texture loading
+  debugEarthTexture() {
+    const earth = this.scene.getObjectByName('earth');
+    if (!earth) {
+      console.error('Earth object not found!');
+      return;
+    }
+    console.log('Earth object found:', earth);
+    console.log('Earth material:', earth.material);
+    console.log('Earth material map:', earth.material.map);
+    console.log('Earth material color:', earth.material.color);
+    
+    // Try to load texture manually
+    this.tryLoadLocalEarthTexture();
+  }
+
+  // Toggle post-processing effects
+  togglePostProcessing() {
+    if (this.effectComposer) {
+      console.log('Post-processing effects are currently enabled');
+      console.log('Effect composer:', this.effectComposer);
+      console.log('Bloom pass:', this.bloomPass);
+      console.log('DOF pass:', this.dofPass);
+    } else {
+      console.log('Post-processing effects are disabled');
+      console.log('Attempting to re-enable...');
+      this.setupPostProcessing();
+    }
+  }
+
+  // Adjust bloom effect strength
+  adjustBloom(strength) {
+    if (this.bloomPass) {
+      this.bloomPass.strength = Math.max(0, Math.min(3, strength));
+      console.log('Bloom strength set to:', this.bloomPass.strength);
+    } else {
+      console.log('Bloom pass not available');
+    }
   }
 
   onUploadTexture(ev) {
@@ -349,8 +1130,8 @@ class App {
     loader.load(url, tex=>{
       tex.encoding = THREE.sRGBEncoding;
       tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-      if(this.scene && this.scene.children){
-        const earth = this.scene.children.find(c=>c.geometry && c.geometry.type==='SphereGeometry');
+      if(this.scene){
+        const earth = this.scene.getObjectByName('earth');
         if(earth && earth.material){
           // ensure material does not tint the texture
           if(earth.material.color) earth.material.color.setHex(0xffffff);
@@ -710,64 +1491,131 @@ class App {
     return 0;
   }
 
-  // Create cone-shaped fire trail for burning meteors
+  // Create particle fire trail for burning meteors
   createFireTrail(meteor) {
     if (!meteor.burning || meteor.fireTrail) return;
     
-    // Create cone geometry for fire trail
-    const coneGeometry = new THREE.ConeGeometry(0.1, 0.5, 8);
-    const coneMaterial = new THREE.MeshBasicMaterial({
-      color: 0xff4400,
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide
-    });
+    const particleCount = 300;
+    const geometry = new THREE.BufferGeometry();
     
-    const fireTrail = new THREE.Mesh(coneGeometry, coneMaterial);
+    // Create particle positions
+    const positions = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    const alphas = new Float32Array(particleCount);
+    const velocities = new Float32Array(particleCount * 3);
+    const ages = new Float32Array(particleCount);
+    
+    // Initialize particles
+    for (let i = 0; i < particleCount; i++) {
+      const i3 = i * 3;
+      // Start particles at meteor position
+      positions[i3] = meteor.position.x;
+      positions[i3 + 1] = meteor.position.y;
+      positions[i3 + 2] = meteor.position.z;
+      
+      // Random sizes and alphas
+      sizes[i] = Math.random() * 0.03 + 0.01;
+      alphas[i] = Math.random() * 0.9 + 0.1;
+      ages[i] = Math.random(); // Random age for variety
+      
+      // Random velocities for particle movement (trail behind meteor)
+      const speed = Math.random() * 0.05 + 0.02;
+      const angle = Math.random() * Math.PI * 2;
+      velocities[i3] = Math.cos(angle) * speed;
+      velocities[i3 + 1] = Math.sin(angle) * speed;
+      velocities[i3 + 2] = -Math.random() * 0.1; // Trail behind
+    }
+    
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+    geometry.setAttribute('age', new THREE.BufferAttribute(ages, 1));
+    
+    const particleMaterial = this.shaderMaterials.particle.clone();
+    const fireTrail = new THREE.Points(geometry, particleMaterial);
     fireTrail.name = 'fireTrail';
     meteor.fireTrail = fireTrail;
     meteor.trailSegments = [];
     meteor.trailLength = 0;
+    meteor.fireTrail.userData = {
+      velocities: velocities,
+      ages: ages,
+      particleCount: particleCount,
+      lastUpdate: 0,
+      maxAge: 2.0 // Particles live for 2 seconds
+    };
+    
     this.scene.add(fireTrail);
   }
 
-  // Update cone-shaped fire trail
+  // Update particle fire trail
   updateFireTrail(meteor) {
     if (!meteor.fireTrail || !meteor.burning) return;
     
+    const userData = meteor.fireTrail.userData;
+    const positions = meteor.fireTrail.geometry.attributes.position.array;
+    const alphas = meteor.fireTrail.geometry.attributes.alpha.array;
+    const ages = meteor.fireTrail.geometry.attributes.age.array;
+    const velocities = userData.velocities;
+    const deltaTime = 0.016; // ~60fps
+    
     const velocity = meteor.physVelocity || meteor.velocity;
     const speed = velocity.length();
-    
-    // Calculate trail length based on speed and burn intensity
-    const baseLength = Math.min(2.0, speed * 0.1);
     const burnIntensity = meteor.burnIntensity || 0;
-    const trailLength = baseLength * (0.5 + burnIntensity * 0.5);
     
-    // Update cone size based on speed and burn intensity
-    const baseRadius = 0.05 + burnIntensity * 0.1;
-    const radius = Math.min(0.3, baseRadius * (1 + speed * 0.01));
+    // Update each particle
+    for (let i = 0; i < userData.particleCount; i++) {
+      const i3 = i * 3;
+      
+      // Age the particle
+      ages[i] += deltaTime;
+      
+      // If particle is too old, reset it at meteor position
+      if (ages[i] > userData.maxAge) {
+        ages[i] = 0;
+        positions[i3] = meteor.position.x;
+        positions[i3 + 1] = meteor.position.y;
+        positions[i3 + 2] = meteor.position.z;
+        
+        // Reset with new random properties
+        alphas[i] = Math.random() * 0.9 + 0.1;
+        
+        // New velocity based on meteor direction
+        const direction = velocity.clone().normalize();
+        const speedVariation = Math.random() * 0.05 + 0.02;
+        const angle = Math.random() * Math.PI * 2;
+        const perpendicular = new THREE.Vector3(
+          Math.cos(angle),
+          Math.sin(angle),
+          0
+        );
+        
+        velocities[i3] = -direction.x * speedVariation + perpendicular.x * 0.02;
+        velocities[i3 + 1] = -direction.y * speedVariation + perpendicular.y * 0.02;
+        velocities[i3 + 2] = -direction.z * speedVariation + perpendicular.z * 0.02;
+      } else {
+        // Update particle position
+        positions[i3] += velocities[i3] * deltaTime;
+        positions[i3 + 1] += velocities[i3 + 1] * deltaTime;
+        positions[i3 + 2] += velocities[i3 + 2] * deltaTime;
+        
+        // Fade out over time
+        const ageRatio = ages[i] / userData.maxAge;
+        alphas[i] = (1 - ageRatio) * (0.8 + burnIntensity * 0.2);
+      }
+    }
     
-    // Update cone geometry
-    meteor.fireTrail.geometry.dispose();
-    meteor.fireTrail.geometry = new THREE.ConeGeometry(radius, trailLength, 8);
+    // Mark attributes as needing update
+    meteor.fireTrail.geometry.attributes.position.needsUpdate = true;
+    meteor.fireTrail.geometry.attributes.alpha.needsUpdate = true;
+    meteor.fireTrail.geometry.attributes.age.needsUpdate = true;
     
-    // Position cone behind meteor
-    const direction = velocity.clone().normalize();
-    const trailPosition = meteor.mesh.position.clone().sub(direction.multiplyScalar(trailLength * 0.5));
-    meteor.fireTrail.position.copy(trailPosition);
-    
-    // Orient cone to point opposite to velocity direction
-    meteor.fireTrail.lookAt(meteor.mesh.position.clone().sub(direction.multiplyScalar(trailLength)));
-    
-    // Update material properties based on burn intensity
+    // Update shader uniforms
     const material = meteor.fireTrail.material;
     const hue = 0.1 - burnIntensity * 0.1; // Red to orange to yellow
-    material.color.setHSL(hue, 1, 0.5 + burnIntensity * 0.3);
-    material.opacity = 0.6 + burnIntensity * 0.4;
-    
-    // Add flickering effect
-    const flicker = 0.8 + Math.random() * 0.4;
-    material.opacity *= flicker;
+    material.uniforms.time.value = Date.now() * 0.001;
+    material.uniforms.color.value.setHSL(hue, 1, 0.5 + burnIntensity * 0.3);
+    material.uniforms.opacity.value = 0.7 + burnIntensity * 0.3;
   }
 
   // Kepler's equation solver (based on NASA design)
@@ -1520,7 +2368,7 @@ class App {
     });
   }
 
-  // Create dome-shaped explosion effect
+  // Create particle-based explosion effect
   createExplosion(position, energy, meteorSize = 1000) {
     if (!this.enableExplosions) return;
     
@@ -1531,242 +2379,419 @@ class App {
     const kilotons = energy / 4.184e12;
     console.log(`Impact: ${kilotons.toFixed(2)} kt`);
     
-    // Create dome-shaped explosion
-    this.createDomeExplosion(position, energy, meteorSize);
+    // Create particle explosion
+    this.createParticleExplosion(position, energy, meteorSize);
   }
 
-  // Create dome-shaped explosion effect
-  createDomeExplosion(position, energy, meteorSize = 1000) {
-    const explosionGroup = new THREE.Group();
-    explosionGroup.position.copy(position);
-    
-    // Calculate explosion size based on energy and meteor size
+  // Create high-effort realistic explosion with multiple effects
+  createParticleExplosion(position, energy, meteorSize = 1000) {
+    // Calculate explosion parameters
     const kilotons = energy / 4.184e12;
     const meteorSizeFactor = Math.max(0.5, Math.min(3.0, Math.log10(meteorSize + 1) / 2));
     const baseRadius = Math.max(0.1, Math.min(2.0, Math.pow(kilotons, 0.3) * 0.5 * meteorSizeFactor));
     
-    // Create dome geometry
-    const domeGeo = new THREE.SphereGeometry(baseRadius, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    const domeMat = new THREE.MeshBasicMaterial({
-      color: 0xff4400,
+    // Create explosion group
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(position);
+    this.scene.add(explosionGroup);
+    
+    // 1. Initial flash (very bright, short duration)
+    this.createExplosionFlash(explosionGroup, baseRadius, energy);
+    
+    // 2. Fireball (main explosion)
+    this.createFireball(explosionGroup, baseRadius, energy);
+    
+    // 3. Debris particles (high-velocity fragments)
+    this.createDebrisParticles(explosionGroup, baseRadius, energy, meteorSize);
+    
+    // 4. Shockwave rings (atmospheric compression)
+    this.createShockwaveRings(explosionGroup, baseRadius, energy);
+    
+    // 5. Mushroom cloud (for large explosions)
+    if (kilotons > 1.0) {
+      this.createMushroomCloud(explosionGroup, baseRadius, energy);
+    }
+    
+    // 6. Atmospheric disturbance (affects atmosphere shader)
+    this.createAtmosphericDisturbance(position, baseRadius, energy);
+    
+    // Add to particle systems for cleanup
+    this.particleSystems.push({
+      group: explosionGroup,
+      startTime: Date.now(),
+      duration: 8000, // 8 seconds for full effect (faster)
+      position: position.clone(),
+      energy: energy,
+      type: 'high_effort'
+    });
+  }
+
+  // Create initial explosion flash (faster, more intense)
+  createExplosionFlash(parent, radius, energy) {
+    const flashGeometry = new THREE.SphereGeometry(radius * 0.15, 16, 16);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.8,
+      opacity: 1.0
+    });
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    parent.add(flash);
+    
+    // Animate flash (much faster)
+    const startTime = Date.now();
+    const animateFlash = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(1, elapsed / 100); // 100ms duration (faster)
+      
+      if (progress < 1) {
+        flash.material.opacity = 1.0 - progress * progress; // Quadratic fade for more dramatic effect
+        flash.scale.setScalar(1 + progress * 8); // Faster expansion
+        requestAnimationFrame(animateFlash);
+      } else {
+        parent.remove(flash);
+      }
+    };
+    animateFlash();
+  }
+
+  // Create main fireball (faster, more dust/fire-like)
+  createFireball(parent, radius, energy) {
+    const fireballGeometry = new THREE.SphereGeometry(radius, 32, 32);
+    const fireballMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0.0 },
+        radius: { value: radius },
+        energy: { value: energy },
+        color1: { value: new THREE.Color(0xff0000) },
+        color2: { value: new THREE.Color(0xff4400) },
+        color3: { value: new THREE.Color(0xff8800) },
+        dustColor: { value: new THREE.Color(0x8B4513) }
+      },
+      vertexShader: `
+        varying vec3 vPosition;
+        varying vec3 vNormal;
+        varying vec3 vWorldPosition;
+        void main() {
+          vPosition = position;
+          vNormal = normal;
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform float radius;
+        uniform float energy;
+        uniform vec3 color1;
+        uniform vec3 color2;
+        uniform vec3 color3;
+        uniform vec3 dustColor;
+        varying vec3 vPosition;
+        varying vec3 vNormal;
+        varying vec3 vWorldPosition;
+        
+        // Noise function for dust/fire turbulence
+        float noise(vec3 p) {
+          return sin(p.x * 15.0 + time * 8.0) * 0.1 +
+                 sin(p.y * 12.0 + time * 6.0) * 0.1 +
+                 sin(p.z * 18.0 + time * 7.0) * 0.1 +
+                 sin(p.x * 25.0 + p.y * 20.0 + time * 10.0) * 0.05;
+        }
+        
+        void main() {
+          float dist = length(vPosition);
+          float normalizedDist = dist / radius;
+          
+          // Create more chaotic dust/fire pattern
+          float turbulence = noise(vPosition * 2.0) + noise(vPosition * 4.0) * 0.5;
+          
+          // Faster, more chaotic color changes
+          float timeFactor = sin(time * 8.0) * 0.5 + 0.5;
+          float dustFactor = sin(time * 12.0 + vPosition.x * 5.0) * 0.5 + 0.5;
+          
+          // Mix fire and dust colors
+          vec3 fireColor = mix(color1, color2, normalizedDist + turbulence);
+          fireColor = mix(fireColor, color3, timeFactor * 0.4);
+          
+          vec3 finalColor = mix(fireColor, dustColor, dustFactor * 0.3);
+          
+          // Faster fade with more dramatic falloff
+          float opacity = (1.0 - normalizedDist) * (1.0 - time * 0.3) * 0.9;
+          opacity = max(0.0, opacity);
+          
+          // Add some sparkle for dust particles
+          float sparkle = sin(vPosition.x * 30.0 + time * 20.0) * 0.1 + 0.9;
+          finalColor *= sparkle;
+          
+          gl_FragColor = vec4(finalColor, opacity);
+        }
+      `,
+      transparent: true,
       side: THREE.DoubleSide
     });
-    const dome = new THREE.Mesh(domeGeo, domeMat);
     
-    // Orient dome to face outward from Earth's surface
-    const normal = position.clone().normalize();
-    const quat = new THREE.Quaternion();
-    quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-    dome.quaternion.copy(quat);
+    const fireball = new THREE.Mesh(fireballGeometry, fireballMaterial);
+    parent.add(fireball);
     
-    explosionGroup.add(dome);
-    
-    // Create fire particles
-    const particleCount = Math.min(100, Math.max(20, kilotons * 10));
+    // Animate fireball (much faster)
+    const startTime = Date.now();
+    const animateFireball = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(1, elapsed / 1500); // 1.5 second duration (faster)
+      
+      if (progress < 1) {
+        fireballMaterial.uniforms.time.value = elapsed * 0.002; // Faster animation
+        fireball.scale.setScalar(1 + progress * 4); // Faster expansion
+        fireball.material.opacity = (1.0 - progress * progress) * 0.9; // Quadratic fade
+        requestAnimationFrame(animateFireball);
+      } else {
+        parent.remove(fireball);
+      }
+    };
+    animateFireball();
+  }
+
+  // Create debris particles (faster, more dust/fire-like)
+  createDebrisParticles(parent, radius, energy, meteorSize) {
+    const particleCount = Math.min(1500, Math.max(300, energy / 1e12 * 150));
     const particles = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const velocities = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
     const lifetimes = new Float32Array(particleCount);
+    const types = new Float32Array(particleCount); // 0 = dust, 1 = fire
     
     for (let i = 0; i < particleCount; i++) {
       const i3 = i * 3;
-      // Random position within dome
+      
+      // Random position around explosion center
       const angle = Math.random() * Math.PI * 2;
-      const height = Math.random() * baseRadius;
-      const radius = Math.random() * baseRadius * 0.8;
+      const height = (Math.random() - 0.5) * radius * 2;
+      const r = Math.random() * radius * 0.3;
       
-      positions[i3] = Math.cos(angle) * radius;
+      positions[i3] = Math.cos(angle) * r;
       positions[i3 + 1] = height;
-      positions[i3 + 2] = Math.sin(angle) * radius;
+      positions[i3 + 2] = Math.sin(angle) * r;
       
-      // Random velocity
-      velocities[i3] = (Math.random() - 0.5) * 0.1;
-      velocities[i3 + 1] = Math.random() * 0.2 + 0.1;
-      velocities[i3 + 2] = (Math.random() - 0.5) * 0.1;
+      // Much higher velocity for faster effect
+      const speed = Math.random() * 4 + 2; // 2-6 speed (faster)
+      const direction = new THREE.Vector3(
+        Math.cos(angle) * speed,
+        (Math.random() - 0.5) * 1.0, // More vertical spread
+        Math.sin(angle) * speed
+      );
       
-      lifetimes[i] = Math.random() * 2 + 1;
+      velocities[i3] = direction.x;
+      velocities[i3 + 1] = direction.y;
+      velocities[i3 + 2] = direction.z;
+      
+      // More dust and fire colors
+      const colorVariation = Math.random();
+      const particleType = Math.random();
+      types[i] = particleType;
+      
+      if (particleType < 0.3) {
+        // Fire particles
+        if (colorVariation < 0.3) {
+          colors[i3] = 1.0; colors[i3 + 1] = 0.3; colors[i3 + 2] = 0.0; // Bright red
+        } else if (colorVariation < 0.6) {
+          colors[i3] = 1.0; colors[i3 + 1] = 0.6; colors[i3 + 2] = 0.0; // Orange
+        } else {
+          colors[i3] = 1.0; colors[i3 + 1] = 1.0; colors[i3 + 2] = 0.0; // Yellow
+        }
+      } else {
+        // Dust particles
+        if (colorVariation < 0.4) {
+          colors[i3] = 0.6; colors[i3 + 1] = 0.4; colors[i3 + 2] = 0.2; // Brown dust
+        } else if (colorVariation < 0.7) {
+          colors[i3] = 0.4; colors[i3 + 1] = 0.3; colors[i3 + 2] = 0.2; // Dark brown
+        } else {
+          colors[i3] = 0.3; colors[i3 + 1] = 0.3; colors[i3 + 2] = 0.3; // Gray dust
+        }
+      }
+      
+      sizes[i] = Math.random() * 0.15 + 0.03; // Slightly larger
+      lifetimes[i] = Math.random() * 3 + 2; // 2-5 seconds (shorter)
     }
     
     particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+    particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    particles.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     particles.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+    particles.setAttribute('type', new THREE.BufferAttribute(types, 1));
     
-    const particleMat = new THREE.PointsMaterial({
-      color: 0xff6600,
-      size: 0.05,
+    const particleMaterial = new THREE.PointsMaterial({
+      size: 0.12,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.9,
       blending: THREE.AdditiveBlending
     });
     
-    const particleSystem = new THREE.Points(particles, particleMat);
-    explosionGroup.add(particleSystem);
+    const particleSystem = new THREE.Points(particles, particleMaterial);
+    particleSystem.userData = {
+      velocities: velocities,
+      lifetimes: lifetimes,
+      types: types,
+      particleCount: particleCount,
+      startTime: Date.now()
+    };
     
-    this.scene.add(explosionGroup);
+    parent.add(particleSystem);
     
-    // Add to explosion effects for animation
-    this.explosionEffects.push({
-      group: explosionGroup,
-      dome: dome,
-      particles: particleSystem,
-      lifetime: 3.0,
-      maxLifetime: 3.0,
-      baseRadius: baseRadius,
-      energy: energy
-    });
-    
-    // Create mushroom cloud for large explosions
-    if (kilotons > 1) {
-      this.createMushroomCloud(position, energy);
-    }
-    
-    // Create purple shockwave ring
-    this.createShockwaveRing(position, energy);
+    // Animate particles (faster)
+    const animateParticles = () => {
+      const elapsed = (Date.now() - particleSystem.userData.startTime) * 0.001;
+      const positions = particleSystem.geometry.attributes.position.array;
+      const velocities = particleSystem.userData.velocities;
+      const lifetimes = particleSystem.userData.lifetimes;
+      const types = particleSystem.userData.types;
+      
+      let activeParticles = 0;
+      for (let i = 0; i < particleSystem.userData.particleCount; i++) {
+        const i3 = i * 3;
+        lifetimes[i] -= 0.02; // Faster decay
+        
+        if (lifetimes[i] > 0) {
+          activeParticles++;
+          // Update positions with faster movement
+          positions[i3] += velocities[i3] * 0.02;
+          positions[i3 + 1] += velocities[i3 + 1] * 0.02;
+          positions[i3 + 2] += velocities[i3 + 2] * 0.02;
+          
+          // Apply gravity (stronger for dust)
+          if (types[i] > 0.3) { // Dust particles
+            velocities[i3 + 1] -= 0.03;
+          } else { // Fire particles
+            velocities[i3 + 1] -= 0.01; // Less gravity for fire
+          }
+          
+          // Add some turbulence
+          velocities[i3] += (Math.random() - 0.5) * 0.01;
+          velocities[i3 + 2] += (Math.random() - 0.5) * 0.01;
+        }
+      }
+      
+      if (activeParticles > 0) {
+        particleSystem.geometry.attributes.position.needsUpdate = true;
+        requestAnimationFrame(animateParticles);
+      } else {
+        parent.remove(particleSystem);
+      }
+    };
+    animateParticles();
   }
 
-  // Create mushroom cloud effect
-  createMushroomCloud(position, energy) {
-    const kilotons = energy / 4.184e12;
-    const cloudGroup = new THREE.Group();
-    cloudGroup.position.copy(position);
+  // Create shockwave rings (faster)
+  createShockwaveRings(parent, radius, energy) {
+    const ringCount = 4; // More rings
+    const ringGeometry = new THREE.RingGeometry(radius * 0.3, radius * 1.2, 32);
     
-    // Calculate cloud size based on energy
-    const cloudHeight = Math.max(0.5, Math.min(5.0, Math.pow(kilotons, 0.4) * 1.5));
-    const cloudRadius = Math.max(0.3, Math.min(3.0, Math.pow(kilotons, 0.3) * 1.0));
-    
-    // Get surface normal for proper orientation
-    const normal = position.clone().normalize();
-    const quat = new THREE.Quaternion();
-    quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-    
-    // Create stem (vertical column) - oriented along surface normal
-    const stemGeo = new THREE.CylinderGeometry(cloudRadius * 0.3, cloudRadius * 0.5, cloudHeight * 0.6, 8);
-    const stemMat = new THREE.MeshBasicMaterial({
+    for (let i = 0; i < ringCount; i++) {
+      const ringMaterial = new THREE.MeshBasicMaterial({
+        color: 0x8B00FF,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+      });
+      
+      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+      ring.rotation.x = -Math.PI / 2;
+      ring.userData = {
+        startTime: Date.now() + i * 100, // Faster staggered timing
+        duration: 1000 // Shorter duration
+      };
+      
+      parent.add(ring);
+      
+      // Animate ring (faster)
+      const animateRing = () => {
+        const elapsed = Date.now() - ring.userData.startTime;
+        const progress = Math.min(1, elapsed / ring.userData.duration);
+        
+        if (progress < 1) {
+          ring.scale.setScalar(1 + progress * 6); // Faster expansion
+          ring.material.opacity = 0.8 * (1 - progress * progress); // Quadratic fade
+          requestAnimationFrame(animateRing);
+        } else {
+          parent.remove(ring);
+        }
+      };
+      animateRing();
+    }
+  }
+
+  // Create mushroom cloud for large explosions
+  createMushroomCloud(parent, radius, energy) {
+    const cloudGeometry = new THREE.SphereGeometry(radius * 2, 16, 16);
+    const cloudMaterial = new THREE.MeshBasicMaterial({
       color: 0x666666,
       transparent: true,
-      opacity: 0.7
+      opacity: 0.4
     });
-    const stem = new THREE.Mesh(stemGeo, stemMat);
-    stem.quaternion.copy(quat);
-    stem.position.copy(normal.clone().multiplyScalar(cloudHeight * 0.3));
-    cloudGroup.add(stem);
     
-    // Create mushroom cap - oriented along surface normal
-    const capGeo = new THREE.SphereGeometry(cloudRadius, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    const capMat = new THREE.MeshBasicMaterial({
-      color: 0x888888,
-      transparent: true,
-      opacity: 0.6,
-      side: THREE.DoubleSide
-    });
-    const cap = new THREE.Mesh(capGeo, capMat);
-    cap.quaternion.copy(quat);
-    cap.position.copy(normal.clone().multiplyScalar(cloudHeight * 0.8));
-    cloudGroup.add(cap);
+    const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
+    cloud.position.y = radius * 3;
+    parent.add(cloud);
     
-    // Create smoke particles
-    const particleCount = Math.min(200, Math.max(50, kilotons * 20));
-    const particles = new THREE.BufferGeometry();
-    const positions = new Float32Array(particleCount * 3);
-    const velocities = new Float32Array(particleCount * 3);
-    const lifetimes = new Float32Array(particleCount);
-    
-    for (let i = 0; i < particleCount; i++) {
-      const i3 = i * 3;
-      // Random position within cloud
-      const angle = Math.random() * Math.PI * 2;
-      const height = Math.random() * cloudHeight;
-      const radius = Math.random() * cloudRadius * 0.8;
+    // Animate mushroom cloud
+    const startTime = Date.now();
+    const animateCloud = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(1, elapsed / 10000); // 10 second duration
       
-      positions[i3] = Math.cos(angle) * radius;
-      positions[i3 + 1] = height;
-      positions[i3 + 2] = Math.sin(angle) * radius;
-      
-      // Upward velocity with some randomness
-      velocities[i3] = (Math.random() - 0.5) * 0.05;
-      velocities[i3 + 1] = Math.random() * 0.1 + 0.05;
-      velocities[i3 + 2] = (Math.random() - 0.5) * 0.05;
-      
-      lifetimes[i] = Math.random() * 10 + 5;
-    }
-    
-    particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
-    particles.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
-    
-    const particleMat = new THREE.PointsMaterial({
-      color: 0xaaaaaa,
-      size: 0.1,
-      transparent: true,
-      opacity: 0.8,
-      blending: THREE.NormalBlending
-    });
-    
-    const particleSystem = new THREE.Points(particles, particleMat);
-    cloudGroup.add(particleSystem);
-    
-    this.scene.add(cloudGroup);
-    
-    // Add to explosion effects for animation
-    this.explosionEffects.push({
-      group: cloudGroup,
-      stem: stem,
-      cap: cap,
-      particles: particleSystem,
-      lifetime: 15.0,
-      maxLifetime: 15.0,
-      cloudHeight: cloudHeight,
-      cloudRadius: cloudRadius,
-      energy: energy,
-      type: 'mushroom'
-    });
+      if (progress < 1) {
+        cloud.scale.setScalar(1 + progress * 2);
+        cloud.position.y = radius * 3 + progress * radius * 2;
+        cloud.material.opacity = 0.4 * (1 - progress * 0.5);
+        requestAnimationFrame(animateCloud);
+      } else {
+        parent.remove(cloud);
+      }
+    };
+    animateCloud();
   }
 
-  // Create purple shockwave ring effect
-  createShockwaveRing(position, energy) {
-    const kilotons = energy / 4.184e12;
-    const ringGroup = new THREE.Group();
-    ringGroup.position.copy(position);
-    
-    // Calculate ring size based on energy
-    const baseRadius = Math.max(0.2, Math.min(3.0, Math.pow(kilotons, 0.25) * 0.8));
-    
-    // Get surface normal for proper orientation
-    const normal = position.clone().normalize();
-    const quat = new THREE.Quaternion();
-    quat.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-    
-    // Create ring geometry
-    const ringGeo = new THREE.RingGeometry(baseRadius * 0.8, baseRadius, 32);
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: 0x8B00FF, // Purple color
+  // Create atmospheric disturbance
+  createAtmosphericDisturbance(position, radius, energy) {
+    // This would affect the atmosphere shader uniforms
+    // For now, we'll create a visual indicator
+    const disturbanceGeometry = new THREE.SphereGeometry(radius * 3, 16, 16);
+    const disturbanceMaterial = new THREE.MeshBasicMaterial({
+      color: 0x444444,
       transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide
+      opacity: 0.1,
+      wireframe: true
     });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.quaternion.copy(quat);
-    ringGroup.add(ring);
     
-    this.scene.add(ringGroup);
+    const disturbance = new THREE.Mesh(disturbanceGeometry, disturbanceMaterial);
+    disturbance.position.copy(position);
+    this.scene.add(disturbance);
     
-    // Add to explosion effects for animation
-    this.explosionEffects.push({
-      group: ringGroup,
-      ring: ring,
-      lifetime: 2.0,
-      maxLifetime: 2.0,
-      baseRadius: baseRadius,
-      energy: energy,
-      type: 'shockwave'
-    });
+    // Animate disturbance
+    const startTime = Date.now();
+    const animateDisturbance = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(1, elapsed / 8000); // 8 second duration
+      
+      if (progress < 1) {
+        disturbance.scale.setScalar(1 + progress * 3);
+        disturbance.material.opacity = 0.1 * (1 - progress);
+        requestAnimationFrame(animateDisturbance);
+      } else {
+        this.scene.remove(disturbance);
+      }
+    };
+    animateDisturbance();
   }
+
+
 
   // Update Earth rotation
   updateEarthRotation() {
-    const earth = this.scene.children.find(c => c.geometry && c.geometry.type === 'SphereGeometry' && c.name !== 'moon');
+    const earth = this.scene.getObjectByName('earth');
     if (earth) {
       // Earth rotates once every 24 hours (86400 seconds)
       // Convert to scene time: 86400 seconds * simSpeed
@@ -1775,108 +2800,63 @@ class App {
     }
   }
 
-  // Update explosion effects
-  updateExplosionEffects() {
-    // Iterate backwards to safely remove items
-    for (let i = this.explosionEffects.length - 1; i >= 0; i--) {
-      const effect = this.explosionEffects[i];
-      effect.lifetime -= 0.02 * this.simSpeed;
-      
-      // Update dome explosion
-      if (effect.dome) {
-        const progress = 1 - (effect.lifetime / effect.maxLifetime);
-        
-        // Scale dome up over time
-        const scale = 1 + progress * 2;
-        effect.dome.scale.setScalar(scale);
-        
-        // Fade dome out
-        effect.dome.material.opacity = (1 - progress) * 0.8;
-        
-        // Update dome color (red to orange to yellow)
-        const hue = 0.1 - progress * 0.1; // Red to yellow
-        effect.dome.material.color.setHSL(hue, 1, 0.5);
-        
-        // Dome is already properly oriented to Earth's surface, no additional rotation needed
+  // Update shader uniforms with ray tracing data
+  updateShaderUniforms() {
+    const time = Date.now() * 0.001;
+    const cameraPosition = this.camera.position.clone();
+    const earthPosition = new THREE.Vector3(0, 0, 0);
+    const earthRadius = 1.0;
+    
+    // Calculate sun position (directional light)
+    const sunDirection = new THREE.Vector3(0, 0, 1);
+    const lightPosition = sunDirection.clone().multiplyScalar(1000);
+    
+    // Update starfield
+    if (this.starField && this.starField.material.uniforms) {
+      this.starField.material.uniforms.time.value = time;
+    }
+    
+    // Update atmosphere shader
+    const atmosphere = this.scene.getObjectByName('atmosphere');
+    if (atmosphere && atmosphere.material.uniforms) {
+      atmosphere.material.uniforms.time.value = time;
+      atmosphere.material.uniforms.cameraPosition.value.copy(cameraPosition);
+      atmosphere.material.uniforms.earthPosition.value.copy(earthPosition);
+      atmosphere.material.uniforms.earthRadius.value = earthRadius;
+      atmosphere.material.uniforms.lightPosition.value.copy(lightPosition);
+      atmosphere.material.uniforms.sunDirection.value.copy(sunDirection);
+    }
+    
+    // Update meteor fire trails
+    this.meteors.forEach(meteor => {
+      if (meteor.fireTrail && meteor.fireTrail.material.uniforms) {
+        meteor.fireTrail.material.uniforms.time.value = time;
+        meteor.fireTrail.material.uniforms.cameraPosition.value.copy(cameraPosition);
+        meteor.fireTrail.material.uniforms.earthPosition.value.copy(earthPosition);
+        meteor.fireTrail.material.uniforms.earthRadius.value = earthRadius;
+        meteor.fireTrail.material.uniforms.lightPosition.value.copy(lightPosition);
       }
+    });
+    
+    // Update particle systems (particles.js handles its own updates)
+    // No manual updates needed for particles.js
+  }
+
+  // Update particle systems
+  updateParticleSystems() {
+    // Clean up expired particle systems
+    for (let i = this.particleSystems.length - 1; i >= 0; i--) {
+      const system = this.particleSystems[i];
+      const elapsed = Date.now() - system.startTime;
       
-      // Update mushroom cloud
-      if (effect.type === 'mushroom') {
-        const progress = 1 - (effect.lifetime / effect.maxLifetime);
-        
-        // Scale cloud up over time
-        const scale = 1 + progress * 1.5;
-        effect.stem.scale.setScalar(scale);
-        effect.cap.scale.setScalar(scale);
-        
-        // Move cloud up and spread out
-        const altitude = effect.group.position.length() * this.SCENE_SCALE - this.earthRadiusMeters;
-        const atmosphereHeight = this.atmosphereHeight;
-        
-        if (altitude < atmosphereHeight) {
-          // Cloud is still in atmosphere, continue rising
-          effect.group.position.y += 0.01 * this.simSpeed;
-        } else {
-          // Cloud has reached atmosphere boundary, spread horizontally
-          const spreadFactor = Math.min(2, 1 + progress * 3);
-          effect.cap.scale.x = spreadFactor;
-          effect.cap.scale.z = spreadFactor;
+      if (elapsed >= system.duration) {
+        // Remove expired particle system
+        if (system.type === 'high_effort' && system.group) {
+          this.scene.remove(system.group);
+        } else if (system.container && system.container.parentNode) {
+          system.container.parentNode.removeChild(system.container);
         }
-        
-        // Mushroom cloud is already properly oriented to Earth's surface, no additional rotation needed
-        
-        // Fade cloud out over time
-        const opacity = (1 - progress) * 0.6;
-        effect.stem.material.opacity = opacity;
-        effect.cap.material.opacity = opacity;
-      }
-      
-      // Update particles
-      if (effect.particles) {
-        const positions = effect.particles.geometry.attributes.position.array;
-        const velocities = effect.particles.geometry.attributes.velocity.array;
-        const lifetimes = effect.particles.geometry.attributes.lifetime.array;
-        
-        for (let j = 0; j < positions.length; j += 3) {
-          // Update position
-          positions[j] += velocities[j] * 0.02 * this.simSpeed;
-          positions[j + 1] += velocities[j + 1] * 0.02 * this.simSpeed;
-          positions[j + 2] += velocities[j + 2] * 0.02 * this.simSpeed;
-          
-          // Update lifetime
-          const particleIndex = j / 3;
-          lifetimes[particleIndex] -= 0.02 * this.simSpeed;
-          
-          // Add gravity to particles
-          velocities[j + 1] -= 0.01 * this.simSpeed; // Gravity
-        }
-        
-        effect.particles.geometry.attributes.position.needsUpdate = true;
-        effect.particles.geometry.attributes.lifetime.needsUpdate = true;
-      }
-      
-      // Update shockwave ring
-      if (effect.type === 'shockwave') {
-        const progress = 1 - (effect.lifetime / effect.maxLifetime);
-        
-        // Scale ring outward over time
-        const scale = 1 + progress * 3;
-        effect.ring.scale.setScalar(scale);
-        
-        // Fade ring out
-        effect.ring.material.opacity = (1 - progress) * 0.8;
-        
-        // Add pulsing effect
-        const pulse = 0.8 + Math.sin(progress * Math.PI * 4) * 0.2;
-        effect.ring.material.opacity *= pulse;
-      }
-      
-      // Remove if expired
-      if (effect.lifetime <= 0) {
-        if (effect.group) {
-          this.scene.remove(effect.group);
-        }
-        this.explosionEffects.splice(i, 1);
+        this.particleSystems.splice(i, 1);
       }
     }
   }
@@ -1885,9 +2865,8 @@ class App {
   toggleGravityVisualizers() {
     if (this.showGravityViz) {
       // Create gravity visualizers for Earth and Moon
-      const earth = this.scene.children.find(c => c.geometry && c.geometry.type === 'SphereGeometry' && c.name !== 'moon');
+      const earth = this.scene.getObjectByName('earth');
       if (earth) {
-        earth.name = 'earth';
         this.createGravityVisualizer(earth, this.earthMass, 0x00ff00);
       }
       
@@ -2227,7 +3206,7 @@ class App {
     }
     
     // Object count
-    const objectCount = this.meteors.length + this.explosionEffects.length + this.impactEffects.length + this.trajectoryLines.length;
+    const objectCount = this.meteors.length + this.particleSystems.length + this.impactEffects.length + this.trajectoryLines.length;
     
     // Memory usage (approximate)
     const memoryUsage = Math.round((performance.memory ? performance.memory.usedJSHeapSize : 0) / 1024 / 1024);
@@ -2263,8 +3242,14 @@ class App {
     this.meteors = [];
     this.impactEffects.forEach(e=>{ if(e.mesh) this.scene.remove(e.mesh); });
     this.impactEffects = [];
-    this.explosionEffects.forEach(e=>{ this.scene.remove(e.group); });
-    this.explosionEffects = [];
+    this.particleSystems.forEach(ps=>{ 
+      if(ps.type === 'high_effort' && ps.group) {
+        this.scene.remove(ps.group);
+      } else if(ps.container && ps.container.parentNode) {
+        ps.container.parentNode.removeChild(ps.container);
+      }
+    });
+    this.particleSystems = [];
     this.gravityVisualizers.forEach(v=>{ this.scene.remove(v.mesh); });
     this.gravityVisualizers = [];
     this.trajectoryLines.forEach(t=>{ this.scene.remove(t.line); });
@@ -2315,7 +3300,13 @@ class App {
     // Skip updates if paused
     if (this.paused) {
       this.controls.update();
+      // Use effect composer for post-processing
+      if (this.effectComposer) {
+        this.effectComposer.render();
+      } else {
+      // Use standard rendering for now
       this.renderer.render(this.scene, this.camera);
+      }
       return;
     }
     
@@ -2352,8 +3343,11 @@ class App {
     // update gravity visualizers
     this.updateGravityVisualizers();
 
-    // update explosion effects
-    this.updateExplosionEffects();
+    // update particle systems
+    this.updateParticleSystems();
+
+    // update shader uniforms
+    this.updateShaderUniforms();
 
     // update orbital objects
     this.orbitalObjects.forEach(orbitalObject => {
@@ -2564,7 +3558,8 @@ class App {
     this.meteors = this.meteors.filter(m=>m.active);
 
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+      // Use standard rendering for now
+      this.renderer.render(this.scene, this.camera);
     this.updateLabels();
   }
 
@@ -2828,7 +3823,7 @@ class App {
       if(tried>=urls.length) return alert('All texture loads failed (CORS or network)');
       const url = urls[tried++];
       loader.load(url, tex=>{
-        const earth = this.scene.children.find(c=>c.geometry && c.geometry.type==='SphereGeometry');
+        const earth = this.scene.getObjectByName('earth');
         if(earth && earth.material){
             // ensure material doesn't tint the incoming texture (avoid black-looking map)
             if(earth.material.color) earth.material.color.setHex(0xffffff);
@@ -2845,7 +3840,23 @@ class App {
     tryLoad();
   }
 
-  onWindowResize(){ if(!this.camera||!this.renderer) return; this.camera.aspect = window.innerWidth/window.innerHeight; this.camera.updateProjectionMatrix(); this.renderer.setSize(window.innerWidth, window.innerHeight); }
+  onWindowResize(){ 
+    if(!this.camera||!this.renderer) return; 
+    this.camera.aspect = window.innerWidth/window.innerHeight; 
+    this.camera.updateProjectionMatrix(); 
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    // Update effect composer size if it exists
+    if (this.effectComposer) {
+      this.effectComposer.setSize(window.innerWidth, window.innerHeight);
+    }
+    
+    // Update DOF pass if it exists
+    if (this.dofPass) {
+      this.dofPass.uniforms.aspect.value = this.camera.aspect;
+      this.dofPass.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+    }
+  }
 }
 
 const app = new App();
