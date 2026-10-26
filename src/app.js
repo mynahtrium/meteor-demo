@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { impactAngleDegrees, kilotonsFromJoules, meteorMassKg, radiusFromMass } from './physics.js';
 
+const NARROW_MEDIA = '(max-width: 840px), (max-width: 1024px) and (max-height: 500px)';
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
     '&': '&amp;',
@@ -193,8 +195,19 @@ class App {
     this.labels.forEach(label => {
       const vector = label.position.clone();
       vector.project(this.camera);
-      const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
-      const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+      const narrow = this.narrowQuery?.matches;
+      const view = this.renderer?.domElement;
+      const width = narrow && view ? view.clientWidth : window.innerWidth;
+      const height = narrow && view ? view.clientHeight : window.innerHeight;
+      let x = (vector.x * 0.5 + 0.5) * width;
+      let y = (-vector.y * 0.5 + 0.5) * height;
+      const onScreen = vector.z < 1 && x > -8 && y > -8 && x < width + 8 && y < height + 8;
+      label.element.style.display = onScreen ? '' : 'none';
+      if (!onScreen) return;
+      if (narrow) {
+        x = Math.min(Math.max(x, 72), Math.max(72, width - 72));
+        y = Math.min(Math.max(y, 72), Math.max(72, height - 72));
+      }
       label.element.style.left = `${x}px`;
       label.element.style.top = `${y}px`;
     });
@@ -904,6 +917,8 @@ class App {
   }
 
   async init() {
+    this.narrowQuery = window.matchMedia(NARROW_MEDIA);
+    this.narrowQuery.addEventListener('change', () => this.onWindowResize());
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, this.moonDistance * 8);
     this.camera.position.set(0, this.earthRadius * 0.45, this.earthRadius * 2.6);
@@ -927,6 +942,17 @@ class App {
     document.body.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.renderer.domElement.style.touchAction = 'none';
+    if (window.matchMedia('(pointer: coarse)').matches && THREE.TOUCH) {
+      this.controls.enableDamping = true;
+      this.controls.dampingFactor = 0.09;
+      this.controls.rotateSpeed = 0.75;
+      this.controls.zoomSpeed = 0.85;
+      this.controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN
+      };
+    }
 
     // Earth
     const earthGeo = new THREE.SphereGeometry(this.earthRadius, 32, 32);
@@ -1009,7 +1035,15 @@ class App {
 
     // events
     window.addEventListener('resize', () => this.onWindowResize());
+    window.visualViewport?.addEventListener('resize', () => this.onWindowResize());
+    window.visualViewport?.addEventListener('scroll', () => this.onWindowResize());
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    const aimFromTouch = (event) => {
+      if (event.pointerType === 'mouse' || event.isPrimary === false) return;
+      this.onMouseMove(event);
+    };
+    this.renderer.domElement.addEventListener('pointerdown', aimFromTouch);
+    this.renderer.domElement.addEventListener('pointermove', aimFromTouch);
     window.addEventListener('keydown', (e) => this.onKeyDown(e));
 
     // wire basic UI elements safely
@@ -1019,7 +1053,12 @@ class App {
     if (el('speed')) { const s = el('speed'); if (el('speedVal')) el('speedVal').innerText = s.value; s.oninput = (e) => { if (el('speedVal')) el('speedVal').innerText = parseFloat(e.target.value).toFixed(2); if (el('speedInput')) el('speedInput').value = parseFloat(e.target.value); }; }
     if (el('speedInput')) el('speedInput').oninput = (e) => { const speed = Math.max(0.01, Math.min(10, parseFloat(e.target.value) || 0.05)); if (el('speed')) el('speed').value = speed; if (el('speedVal')) el('speedVal').innerText = speed.toFixed(2); };
     if (el('reset')) el('reset').onclick = () => this.resetScene();
-    if (el('pause')) el('pause').onclick = (e) => { this.paused = !this.paused; e.target.innerText = this.paused ? 'Resume' : 'Pause'; };
+    if (el('pause')) el('pause').onclick = () => {
+      this.paused = !this.paused;
+      const label = this.paused ? 'Resume' : 'Pause';
+      el('pause').textContent = label;
+      if (el('mobilePause')) el('mobilePause').textContent = label;
+    };
     if (el('fire')) el('fire').onclick = () => this.shootMeteor();
     if (el('fetch')) el('fetch').onclick = () => this.fetchAsteroidList(false);
     if (el('loadMore')) el('loadMore').onclick = () => this.fetchAsteroidList(true);
@@ -1078,6 +1117,62 @@ class App {
     this.initMap();
     this.initLeafletMap();
     setTimeout(() => this.loadTsunamiZones(), 1000);
+    this.setupMobileChrome();
+    this.onWindowResize();
+  }
+
+  setupMobileChrome() {
+    const tabs = document.querySelectorAll('#mobileTabs [data-panel]');
+    if (!tabs.length) return;
+
+    const syncChrome = () => {
+      const chrome = document.getElementById('mobileChrome');
+      if (!chrome || !this.narrowQuery?.matches) return;
+      document.body.style.setProperty('--mobile-chrome', `${chrome.offsetHeight + 8}px`);
+    };
+
+    const setOpen = (panelId) => {
+      const opening = Boolean(panelId);
+      document.body.classList.toggle('mobile-sheet', opening);
+      tabs.forEach((tab) => {
+        const selected = tab.dataset.panel === panelId;
+        tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        document.getElementById(tab.dataset.panel)?.classList.toggle('mobile-open', selected);
+      });
+      const toggle = document.getElementById('mobilePanels');
+      if (toggle) toggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      syncChrome();
+      if (panelId === 'mapUI') {
+        const refreshMap = () => this.leafletMap?.invalidateSize();
+        requestAnimationFrame(refreshMap);
+        setTimeout(refreshMap, 60);
+      }
+    };
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const panel = document.getElementById(tab.dataset.panel);
+        const alreadyOpen = panel?.classList.contains('mobile-open');
+        setOpen(alreadyOpen ? null : tab.dataset.panel);
+      });
+    });
+
+    document.getElementById('mobilePanels')?.addEventListener('click', () => {
+      const sheetOpen = document.body.classList.contains('mobile-sheet');
+      setOpen(sheetOpen ? null : 'ui');
+    });
+
+    const press = (sourceId, targetId) => {
+      document.getElementById(sourceId)?.addEventListener('click', () => {
+        document.getElementById(targetId)?.click();
+      });
+    };
+    press('mobileFire', 'fire');
+    press('mobileReset', 'reset');
+    press('mobilePause', 'pause');
+    window.addEventListener('resize', syncChrome);
+    this.narrowQuery.addEventListener('change', syncChrome);
+    syncChrome();
   }
 
   applyColorMap(texture) {
@@ -1141,8 +1236,13 @@ class App {
   }
 
   onMouseMove(event) {
-    this.mouse.x = (event.clientX/window.innerWidth)*2-1;
-    this.mouse.y = -(event.clientY/window.innerHeight)*2+1;
+    const rect = this.renderer?.domElement?.getBoundingClientRect();
+    const width = rect?.width || window.innerWidth;
+    const height = rect?.height || window.innerHeight;
+    const x = event.clientX - (rect?.left || 0);
+    const y = event.clientY - (rect?.top || 0);
+    this.mouse.x = (x / width) * 2 - 1;
+    this.mouse.y = -(y / height) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const planeZ = new THREE.Plane(new THREE.Vector3(0,0,-1).applyQuaternion(this.camera.quaternion), -5);
     const intersection = new THREE.Vector3();
@@ -1177,8 +1277,11 @@ class App {
     } else if(event.code === 'KeyP') {
       // P key to pause/resume
       this.paused = !this.paused;
+      const label = this.paused ? 'Resume' : 'Pause';
       const pauseBtn = document.getElementById('pause');
-      if (pauseBtn) pauseBtn.innerText = this.paused ? 'Resume' : 'Pause';
+      const mobilePause = document.getElementById('mobilePause');
+      if (pauseBtn) pauseBtn.textContent = label;
+      if (mobilePause) mobilePause.textContent = label;
     } else if(event.code === 'KeyE') {
       // E key to focus on Earth
       this.focusOnEarth();
@@ -4303,19 +4406,35 @@ class App {
   onWindowResize(){ 
     if(!this.camera||!this.renderer) return;
     
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    const narrow = this.narrowQuery?.matches;
+    const viewport = narrow ? window.visualViewport : null;
+    const width = viewport?.width || window.innerWidth;
+    const height = viewport?.height || window.innerHeight;
     
     // Validate dimensions to prevent rendering errors
     if (width <= 0 || height <= 0) {
       console.warn('Invalid window dimensions, skipping resize');
       return;
     }
+
+    const canvas = this.renderer.domElement;
+    if (narrow && viewport) {
+      canvas.style.position = 'fixed';
+      canvas.style.top = `${viewport.offsetTop}px`;
+      canvas.style.left = `${viewport.offsetLeft}px`;
+    } else {
+      canvas.style.position = '';
+      canvas.style.top = '';
+      canvas.style.left = '';
+    }
     
     this.camera.aspect = width / height; 
     this.camera.updateProjectionMatrix(); 
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
+    if (narrow && document.getElementById('mapUI')?.classList.contains('mobile-open')) {
+      this.leafletMap?.invalidateSize();
+    }
     
     // Update effect composer size if it exists
     if (this.effectComposer) {
