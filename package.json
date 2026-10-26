@@ -1,21 +1,29 @@
 {
   "name": "meteor-demo",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Interactive 3D meteor impact simulation",
+  "private": true,
+  "type": "module",
   "scripts": {
+    "dev": "vite",
     "start": "vite",
     "start:open": "vite --open",
-    "changelog:append": "node scripts/append-changelog.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test scripts/physics.test.mjs",
+    "changelog:append": "node scripts/append-changelog.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
+    "leaflet": "^1.9.4",
     "three": "^0.180.0"
   },
   "devDependencies": {
-    "vite": "^7.1.7"
+    "vite": "^7.3.7"
   }
 }

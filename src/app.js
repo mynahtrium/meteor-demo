@@ -1,5 +1,16 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { impactAngleDegrees, kilotonsFromJoules, meteorMassKg, radiusFromMass } from './physics.js';
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[ch]));
+}
 
 // Enhanced alert function for better user notifications
 function showEnhancedAlert(title, message, type = 'info') {
@@ -39,8 +50,9 @@ class App {
     this.simulationStartTime = Date.now();
     this.lastUpdateTime = Date.now();
     
-    // Post-processing effects
+    // Post-processing effects (loaded only when toggled)
     this.effectComposer = null;
+    this.usePostProcessing = false;
     this.dofPass = null;
     this.bloomPass = null;
     this.starField = null;
@@ -170,10 +182,7 @@ class App {
   createLabel(text, position) {
     const div = document.createElement('div');
     div.className = 'label';
-    div.style.position = 'absolute';
-    div.style.color = 'white';
-    div.style.fontSize = '14px';
-    div.innerText = text;
+    div.textContent = text;
     document.body.appendChild(div);
     const label = { element: div, position };
     this.labels.push(label);
@@ -193,7 +202,8 @@ class App {
 
   // Create starry skybox
   createStarrySkybox() {
-    const geometry = new THREE.SphereGeometry(500, 60, 40);
+    const skyRadius = this.moonDistance * 2.5;
+    const geometry = new THREE.SphereGeometry(skyRadius, 32, 24);
     const material = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0.0 }
@@ -287,13 +297,11 @@ class App {
         color: { value: new THREE.Color(0xff4400) },
         opacity: { value: 0.8 },
         lightPosition: { value: new THREE.Vector3(0, 0, 0) },
-        cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
         earthPosition: { value: new THREE.Vector3(0, 0, 0) },
-        earthRadius: { value: 1.0 }
+        earthRadius: { value: this.earthRadius }
       },
       vertexShader: `
         uniform vec3 lightPosition;
-        uniform vec3 cameraPosition;
         uniform vec3 earthPosition;
         varying vec2 vUv;
         varying vec3 vPosition;
@@ -321,7 +329,6 @@ class App {
         uniform vec3 color;
         uniform float opacity;
         uniform vec3 lightPosition;
-        uniform vec3 cameraPosition;
         uniform vec3 earthPosition;
         uniform float earthRadius;
         varying vec2 vUv;
@@ -394,7 +401,7 @@ class App {
           vec3 finalColor = diffuse + specularColor + ambient + scattering;
           
           // Distance-based attenuation
-          float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.1);
+          float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.002);
           finalColor *= distanceAttenuation;
           
           gl_FragColor = vec4(finalColor, baseAlpha);
@@ -413,13 +420,11 @@ class App {
         color2: { value: new THREE.Color(0xffaa00) },
         color3: { value: new THREE.Color(0xffffff) },
         lightPosition: { value: new THREE.Vector3(0, 0, 0) },
-        cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
         earthPosition: { value: new THREE.Vector3(0, 0, 0) },
-        earthRadius: { value: 1.0 }
+        earthRadius: { value: this.earthRadius }
       },
       vertexShader: `
         uniform vec3 lightPosition;
-        uniform vec3 cameraPosition;
         uniform vec3 earthPosition;
         varying vec2 vUv;
         varying vec3 vPosition;
@@ -449,7 +454,6 @@ class App {
         uniform vec3 color2;
         uniform vec3 color3;
         uniform vec3 lightPosition;
-        uniform vec3 cameraPosition;
         uniform vec3 earthPosition;
         uniform float earthRadius;
         varying vec2 vUv;
@@ -476,7 +480,7 @@ class App {
         float calculateShadow(vec3 worldPos, vec3 lightDir) {
           float shadow = 1.0;
           float earthShadow = raySphereIntersect(worldPos, lightDir, earthPosition, earthRadius);
-          if (earthShadow > 0.0 && earthShadow < 100.0) {
+          if (earthShadow > 0.0 && earthShadow < 2000.0) {
             shadow = 0.3; // Soft shadow
           }
           return shadow;
@@ -521,7 +525,7 @@ class App {
           vec3 finalColor = diffuse + specularColor + ambient + volumetric;
           
           // Distance-based attenuation
-          float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.05);
+          float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.001);
           finalColor *= distanceAttenuation;
           
           float alpha = heat * intensity * pulse * (1.0 - dist * 2.0);
@@ -539,26 +543,26 @@ class App {
         opacity: { value: 0.4 },
         color: { value: new THREE.Color(0x87CEEB) },
         lightPosition: { value: new THREE.Vector3(0, 0, 0) },
-        cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
         earthPosition: { value: new THREE.Vector3(0, 0, 0) },
-        earthRadius: { value: 1.0 },
+        earthRadius: { value: this.earthRadius },
         sunDirection: { value: new THREE.Vector3(0, 0, 1) },
-        atmosphereRadius: { value: 1.15 },
+        atmosphereRadius: { value: this.earthRadius + this.atmosphereHeightScene },
         rayleighCoeff: { value: new THREE.Vector3(5.8e-6, 1.35e-5, 3.31e-5) },
         mieCoeff: { value: 2e-5 },
         mieG: { value: 0.76 },
         sunIntensity: { value: 25.0 },
-        // Compiled shader optimizations
         invWavelength: { value: new THREE.Vector3(1.0/0.650, 1.0/0.570, 1.0/0.475) },
-        scale: { value: 1.0 / (1.15 - 1.0) },
+        scale: { value: 1 / Math.max(this.atmosphereHeightScene, 1e-3) },
         scaleDepth: { value: 0.25 },
-        scaleOverScaleDepth: { value: 4.0 / (1.15 - 1.0) }
+        scaleOverScaleDepth: { value: 4 / Math.max(this.atmosphereHeightScene, 1e-3) },
+        marchDistance: { value: this.moonDistance }
       },
       vertexShader: `
         uniform vec3 lightPosition;
-        uniform vec3 cameraPosition;
         uniform vec3 earthPosition;
         uniform vec3 sunDirection;
+        uniform float earthRadius;
+        uniform float atmosphereRadius;
         varying vec3 vNormal;
         varying vec3 vPosition;
         varying vec3 vWorldPosition;
@@ -577,7 +581,7 @@ class App {
           vViewDirection = normalize(cameraPosition - vWorldPosition);
           vSunDirection = normalize(sunDirection);
           vDistanceToEarth = distance(vWorldPosition, earthPosition);
-          vAtmosphereHeight = (vDistanceToEarth - 1.0) / 0.1; // Normalized height in atmosphere
+          vAtmosphereHeight = clamp((vDistanceToEarth - earthRadius) / max(atmosphereRadius - earthRadius, 0.001), 0.0, 1.0);
           
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -587,7 +591,6 @@ class App {
         uniform float opacity;
         uniform vec3 color;
         uniform vec3 lightPosition;
-        uniform vec3 cameraPosition;
         uniform vec3 earthPosition;
         uniform float earthRadius;
         uniform float atmosphereRadius;
@@ -600,6 +603,7 @@ class App {
         uniform float scale;
         uniform float scaleDepth;
         uniform float scaleOverScaleDepth;
+        uniform float marchDistance;
         varying vec3 vNormal;
         varying vec3 vPosition;
         varying vec3 vWorldPosition;
@@ -648,7 +652,7 @@ class App {
           if (atmosphereHit < 0.0) return vec3(0.0);
           
           float start = max(0.0, atmosphereHit);
-          float end = 50.0; // Reduced for performance
+          float end = marchDistance;
           
           float stepSize = (end - start) / float(NUM_SAMPLES);
           vec3 totalRayleigh = vec3(0.0);
@@ -752,16 +756,14 @@ class App {
           color: { value: new THREE.Color(0xff6600) },
           opacity: { value: 1.0 },
           lightPosition: { value: new THREE.Vector3(0, 0, 0) },
-          cameraPosition: { value: new THREE.Vector3(0, 0, 0) },
           earthPosition: { value: new THREE.Vector3(0, 0, 0) },
-          earthRadius: { value: 1.0 }
+          earthRadius: { value: this.earthRadius }
         },
         vertexShader: `
           attribute float size;
           attribute float alpha;
           attribute float age;
           uniform vec3 lightPosition;
-          uniform vec3 cameraPosition;
           uniform vec3 earthPosition;
           varying float vAlpha;
           varying float vAge;
@@ -788,7 +790,6 @@ class App {
           uniform vec3 color;
           uniform float opacity;
           uniform vec3 lightPosition;
-          uniform vec3 cameraPosition;
           uniform vec3 earthPosition;
           uniform float earthRadius;
           varying float vAlpha;
@@ -814,7 +815,7 @@ class App {
           float calculateShadow(vec3 worldPos, vec3 lightDir) {
             float shadow = 1.0;
             float earthShadow = raySphereIntersect(worldPos, lightDir, earthPosition, earthRadius);
-            if (earthShadow > 0.0 && earthShadow < 100.0) {
+            if (earthShadow > 0.0 && earthShadow < 2000.0) {
               shadow = 0.4; // Soft shadow
             }
             return shadow;
@@ -851,7 +852,7 @@ class App {
             vec3 finalColor = diffuse + specularColor + ambient;
             
             // Distance-based attenuation
-            float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.1);
+            float distanceAttenuation = 1.0 / (1.0 + vDistanceToEarth * 0.002);
             finalColor *= distanceAttenuation;
             
             float alpha = (1.0 - dist * 2.0) * vAlpha * opacity * flicker;
@@ -867,10 +868,10 @@ class App {
   async setupPostProcessing() {
     try {
       // Import post-processing modules
-      const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
-      const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js');
-      const { UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js');
-      const { BokehPass } = await import('three/addons/postprocessing/BokehPass.js');
+      const { EffectComposer } = await import('three/examples/jsm/postprocessing/EffectComposer.js');
+      const { RenderPass } = await import('three/examples/jsm/postprocessing/RenderPass.js');
+      const { UnrealBloomPass } = await import('three/examples/jsm/postprocessing/UnrealBloomPass.js');
+      const { BokehPass } = await import('three/examples/jsm/postprocessing/BokehPass.js');
       
       // Create effect composer
       this.effectComposer = new EffectComposer(this.renderer);
@@ -882,17 +883,16 @@ class App {
       // Add bloom pass for glowing effects
       this.bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        1.5, // strength
-        0.4, // radius
-        0.85 // threshold
+        0.35,
+        0.3,
+        0.85
       );
       this.effectComposer.addPass(this.bloomPass);
       
-      // Add depth of field pass
       this.dofPass = new BokehPass(this.scene, this.camera, {
-        focus: 10.0,
-        aperture: 0.025,
-        maxblur: 0.01,
+        focus: this.camera.position.length(),
+        aperture: 0.00015,
+        maxblur: 0.004,
         width: window.innerWidth,
         height: window.innerHeight
       });
@@ -905,26 +905,28 @@ class App {
 
   async init() {
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
-    this.camera.position.set(0, 3, 15);
+    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, this.moonDistance * 8);
+    this.camera.position.set(0, this.earthRadius * 0.45, this.earthRadius * 2.6);
     this.scene.add(this.camera);
     
     // Create starry skybox
     this.createStarrySkybox();
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      logarithmicDepthBuffer: true,
+      powerPreference: 'high-performance'
+    });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-    // Ensure correct color space for loaded textures
-    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
+    this.renderer.domElement.setAttribute('role', 'img');
+    this.renderer.domElement.setAttribute('aria-label', '3D view of Earth, the Moon, and incoming meteors');
     document.body.appendChild(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    
-    // Setup post-processing effects
-    await this.setupPostProcessing();
 
     // Earth
     const earthGeo = new THREE.SphereGeometry(this.earthRadius, 32, 32);
@@ -946,7 +948,7 @@ class App {
 
     // Moon
     const moonGeo = new THREE.SphereGeometry(this.moonRadius, 16, 16);
-    const moonMat = new THREE.MeshPhongMaterial({ color: 0xcccccc, roughness: 0.8 });
+    const moonMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.8 });
     const moon = new THREE.Mesh(moonGeo, moonMat);
     moon.name = 'moon';
     moon.position.set(this.moonDistance, 0, 0);
@@ -1073,45 +1075,41 @@ class App {
     // Cache frequently accessed DOM elements for performance
     this.cacheDOMElements();
     
-    // Initialize map
     this.initMap();
-    
-    // Initialize Leaflet if available
-    if (typeof L !== 'undefined') {
-      this.initLeafletMap();
-      // Load tsunami zones after map is ready
-      setTimeout(() => this.loadTsunamiZones(), 1000);
-    } else {
-      // Set up callback for when Leaflet loads
-      window.initLeafletMap = () => this.initLeafletMap();
-    }
+    this.initLeafletMap();
+    setTimeout(() => this.loadTsunamiZones(), 1000);
+  }
+
+  applyColorMap(texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = this.renderer?.capabilities?.getMaxAnisotropy?.() || 1;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = true;
+    return texture;
   }
 
   tryLoadLocalEarthTexture(){
-    const localPath = './earth_texture.jpg';
     const loader = new THREE.TextureLoader();
-    loader.load(localPath, tex => {
+    loader.load('./earth_texture.jpg', tex => {
       const earth = this.scene.getObjectByName('earth');
       if(earth && earth.material){
         if(earth.material.color) earth.material.color.setHex(0xffffff);
-        tex.encoding = THREE.sRGBEncoding;
-        tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-        tex.minFilter = THREE.LinearMipmapLinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.generateMipmaps = true;
-        earth.material.map = tex; 
+        this.applyColorMap(tex);
+        earth.material.map = tex;
         earth.material.needsUpdate = true;
       }
-    }, undefined, err => {
+    }, undefined, () => {
       // Silent fail if texture not present or CORS issue
     });
   }
 
   // Toggle post-processing effects
-  togglePostProcessing() {
+  async togglePostProcessing() {
     if (!this.effectComposer) {
-      this.setupPostProcessing();
+      await this.setupPostProcessing();
     }
+    this.usePostProcessing = Boolean(this.effectComposer) && !this.usePostProcessing;
   }
 
   // Adjust bloom effect strength
@@ -1122,24 +1120,24 @@ class App {
   }
 
   onUploadTexture(ev) {
-    const f = ev.target.files && ev.target.files[0];
-    if(!f) return;
-    const url = URL.createObjectURL(f);
+    const file = ev.target.files && ev.target.files[0];
+    if(!file) return;
+    const url = URL.createObjectURL(file);
     const loader = new THREE.TextureLoader();
-    loader.load(url, tex=>{
-      tex.encoding = THREE.sRGBEncoding;
-      tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-      if(this.scene){
-        const earth = this.scene.getObjectByName('earth');
-        if(earth && earth.material){
-          // ensure material does not tint the texture
-          if(earth.material.color) earth.material.color.setHex(0xffffff);
-          tex.encoding = THREE.sRGBEncoding;
-          earth.material.map = tex; earth.material.needsUpdate = true;
-        }
-      }
+    loader.load(url, tex => {
       URL.revokeObjectURL(url);
-    }, undefined, err=>{ console.error('Local texture load failed', err); alert('Local texture failed to load'); });
+      this.applyColorMap(tex);
+      const earth = this.scene?.getObjectByName('earth');
+      if(earth && earth.material){
+        if(earth.material.color) earth.material.color.setHex(0xffffff);
+        earth.material.map = tex;
+        earth.material.needsUpdate = true;
+      }
+    }, undefined, err => {
+      URL.revokeObjectURL(url);
+      console.error('Local texture load failed', err);
+      showEnhancedAlert('Texture failed', 'The selected image could not be used as an Earth texture.', 'error');
+    });
   }
 
   onMouseMove(event) {
@@ -1475,17 +1473,9 @@ class App {
     // Update meteor mass and size
     if (meteor.mass > massLoss) {
       meteor.mass -= massLoss;
-      
-      // Update size based on mass reduction using simplified formula
-      // mass = density × radius × π, so radius = mass / (density × π)
-      const density = meteor.mass / (meteor.size / 2 * Math.PI); // Extract original density
-      
-      if (meteor.mass > 0 && density > 0) {
-        const newRadius = meteor.mass / (density * Math.PI);
-        meteor.size = newRadius * 2;
-      } else {
-        meteor.size = 0; // Meteor completely burned up
-      }
+      const bodyDensity = meteor.density || 1600;
+      const newRadius = radiusFromMass(meteor.mass, bodyDensity);
+      meteor.size = newRadius * 2;
       
       // Update area
       const radius = meteor.size / 2;
@@ -1784,56 +1774,45 @@ class App {
 
   // Initialize Leaflet Map
   initLeafletMap() {
-    if (typeof L === 'undefined') {
+    const L = globalThis.L;
+    if (!L) {
       console.warn('Leaflet not loaded - using fallback canvas map');
       this.initFallbackMap();
       return;
     }
-    
-    this.leafletReady = true;
-    
+
     const mapElement = document.getElementById('googleMap');
     if (!mapElement) return;
-    
-    // Initialize the map
+
     this.leafletMap = L.map('googleMap', {
       center: [0, 0],
       zoom: 2,
-      zoomControl: true,
-      attributionControl: false
+      zoomControl: true
     });
-    
-    // Add tile layer (using OpenStreetMap)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+    this.leafletReady = true;
+
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18
     }).addTo(this.leafletMap);
-    
-    // Add dark theme tile layer option
+
     const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap contributors, © CARTO',
+      attribution: '&copy; OpenStreetMap contributors, &copy; CARTO',
       maxZoom: 18
     });
-    
-    // Add satellite tile layer option
+
     const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: '© Esri',
+      attribution: '&copy; Esri',
       maxZoom: 18
     });
-    
-    // Add layer control
-    const baseMaps = {
-      "OpenStreetMap": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 18
-      }),
-      "Dark Theme": darkLayer,
-      "Satellite": satelliteLayer
-    };
-    
-    L.control.layers(baseMaps).addTo(this.leafletMap);
-    
-      // Leaflet map initialized
+
+    L.control.layers({
+      OpenStreetMap: osm,
+      'Dark Theme': darkLayer,
+      Satellite: satelliteLayer
+    }).addTo(this.leafletMap);
+
+    requestAnimationFrame(() => this.leafletMap?.invalidateSize());
   }
 
   // Fallback map when Leaflet is not available
@@ -1870,6 +1849,8 @@ class App {
   // Add impact marker to Leaflet map
   addImpactToLeafletMap(lat, lon, energy, blastRadius, craterData = null) {
     if (!this.leafletReady || !this.leafletMap) return;
+    const L = globalThis.L;
+    if (!L) return;
     
     const kilotons = energy / 4.184e12;
     
@@ -2075,16 +2056,8 @@ class App {
 
   // Calculate impact angle from meteor velocity
   calculateImpactAngle(meteor) {
-    if (!meteor.physVelocity) return 90; // Default to vertical impact
-    
-    // Calculate angle between velocity vector and surface normal
-    const velocity = meteor.physVelocity.clone().normalize();
-    const surfaceNormal = new THREE.Vector3(0, 0, 1); // Assuming flat surface
-    
-    const dotProduct = velocity.dot(surfaceNormal);
-    const angle = Math.acos(Math.abs(dotProduct)) * 180 / Math.PI;
-    
-    return Math.max(angle, 5); // Minimum 5 degrees to avoid division by zero
+    if (!meteor.physVelocity || !meteor.mesh) return 90;
+    return impactAngleDegrees(meteor.physVelocity, meteor.mesh.position);
   }
 
   // Create 3D crater visualization
@@ -2185,6 +2158,8 @@ class App {
   // Create effect areas showing death/life percentage zones
   createEffectAreas(lat, lon, blastRadius) {
     if (!this.leafletReady || !this.leafletMap) return;
+    const L = globalThis.L;
+    if (!L) return;
     
     const effectZones = [
       { radius: blastRadius * 0.1, color: '#000000', opacity: 0.8, label: 'Instant Death (100%)' },
@@ -2219,6 +2194,8 @@ class App {
   // Auto-zoom to impact area
   autoZoomToImpact(lat, lon, blastRadius) {
     if (!this.leafletReady || !this.leafletMap) return;
+    const L = globalThis.L;
+    if (!L) return;
     
     // Calculate appropriate zoom level based on blast radius
     const maxRadius = Math.max(blastRadius * 1.5, 10); // At least 10km view
@@ -2262,6 +2239,8 @@ class App {
   // Add tsunami zone to map
   addTsunamiZone(zoneData) {
     if (!this.leafletReady || !this.leafletMap) return;
+    const L = globalThis.L;
+    if (!L) return;
     
     const { name, lat, lon, radius, risk } = zoneData;
     
@@ -2367,6 +2346,8 @@ class App {
   // Add earthquake effect to map
   addEarthquakeEffect(lat, lon, magnitude, radius) {
     if (!this.leafletReady || !this.leafletMap) return;
+    const L = globalThis.L;
+    if (!L) return;
     
     // Color based on magnitude
     let color = '#00ff00'; // Green for small
@@ -2401,6 +2382,8 @@ class App {
   // Generate tsunami effect
   generateTsunami(lat, lon, magnitude, earthquakeRadius) {
     if (!this.leafletReady || !this.leafletMap) return;
+    const L = globalThis.L;
+    if (!L) return;
     
     // Tsunami radius is typically 10-50x the earthquake radius
     const tsunamiRadius = earthquakeRadius * (20 + Math.random() * 30);
@@ -2459,14 +2442,15 @@ class App {
     const mapUI = document.getElementById('mapUI');
     const toggleBtn = document.getElementById('toggleMapSize');
     
+    if (!mapUI) return;
     this.mapExpanded = !this.mapExpanded;
     
     if (this.mapExpanded) {
       mapUI.classList.add('expanded');
-      toggleBtn.textContent = 'Collapse';
+      if (toggleBtn) toggleBtn.textContent = 'Collapse';
     } else {
       mapUI.classList.remove('expanded');
-      toggleBtn.textContent = 'Expand';
+      if (toggleBtn) toggleBtn.textContent = 'Expand';
     }
     
     // Trigger map resize
@@ -2563,11 +2547,7 @@ class App {
   loadMeteorTexture(material) {
     const loader = new THREE.TextureLoader();
     loader.load('./meteor_texture.jpg', texture => {
-      texture.encoding = THREE.sRGBEncoding;
-      texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = true;
+      this.applyColorMap(texture);
       material.map = texture;
       material.needsUpdate = true;
       // Meteor texture loaded successfully
@@ -2582,11 +2562,7 @@ class App {
       const apiKey = document.getElementById('apiKey')?.value.trim();
       if (!apiKey) return 1600; // More realistic default density for asteroids
       
-      const response = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${asteroidId}?api_key=${apiKey}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
+      const data = await this.fetchNasa(`/neo/rest/v1/neo/${encodeURIComponent(asteroidId)}`, {}, apiKey);
       
       return this.getMeteorDensityFromDetails(data);
       
@@ -3125,54 +3101,57 @@ class App {
   // Update Earth rotation
   updateEarthRotation() {
     const earth = this.scene.getObjectByName('earth');
-    if (earth) {
-      // Earth rotates once every 24 hours (86400 seconds)
-      // Convert to scene time: 86400 seconds * simSpeed
-      const rotationSpeed = (2 * Math.PI) / (86400 * this.simSpeed);
-      earth.rotation.y += rotationSpeed * 0.02; // 0.02 is the frame time
-    }
+    if (!earth) return;
+    const rotationSpeed = (2 * Math.PI) / 86400;
+    earth.rotation.y += rotationSpeed * 0.02 * this.simSpeed;
   }
 
   // Update shader uniforms with ray tracing data
   updateShaderUniforms() {
+    if (!this._shaderScratch) {
+      this._shaderScratch = {
+        cameraPosition: new THREE.Vector3(),
+        earthPosition: new THREE.Vector3(0, 0, 0),
+        sunDirection: new THREE.Vector3(0, 0, 1),
+        lightPosition: new THREE.Vector3()
+      };
+    }
+    const scratch = this._shaderScratch;
     const time = Date.now() * 0.001;
-    const cameraPosition = this.camera.position.clone();
-    const earthPosition = new THREE.Vector3(0, 0, 0);
-    const earthRadius = 1.0;
-    
-    // Calculate sun position (directional light)
-    const sunDirection = new THREE.Vector3(0, 0, 1);
-    const lightPosition = sunDirection.clone().multiplyScalar(1000);
-    
-    // Update starfield
-    if (this.starField && this.starField.material.uniforms) {
+    scratch.cameraPosition.copy(this.camera.position);
+    scratch.lightPosition.copy(scratch.sunDirection).multiplyScalar(Math.max(1000, this.moonDistance));
+
+    const earthRadius = this.earthRadius;
+    const atmosphereRadius = this.earthRadius + this.atmosphereHeightScene;
+    const thickness = Math.max(this.atmosphereHeightScene, 1e-3);
+
+    if (this.starField?.material?.uniforms?.time) {
       this.starField.material.uniforms.time.value = time;
     }
-    
-    // Update atmosphere shader
-    const atmosphere = this.scene.getObjectByName('atmosphere');
-    if (atmosphere && atmosphere.material.uniforms) {
-      atmosphere.material.uniforms.time.value = time;
-      atmosphere.material.uniforms.cameraPosition.value.copy(cameraPosition);
-      atmosphere.material.uniforms.earthPosition.value.copy(earthPosition);
-      atmosphere.material.uniforms.earthRadius.value = earthRadius;
-      atmosphere.material.uniforms.lightPosition.value.copy(lightPosition);
-      atmosphere.material.uniforms.sunDirection.value.copy(sunDirection);
+
+    const atmoUniforms = this.scene.getObjectByName('atmosphere')?.material?.uniforms;
+    if (atmoUniforms) {
+      if (atmoUniforms.time) atmoUniforms.time.value = time;
+      atmoUniforms.cameraPosition?.value.copy(scratch.cameraPosition);
+      atmoUniforms.earthPosition?.value.copy(scratch.earthPosition);
+      if (atmoUniforms.earthRadius) atmoUniforms.earthRadius.value = earthRadius;
+      if (atmoUniforms.atmosphereRadius) atmoUniforms.atmosphereRadius.value = atmosphereRadius;
+      if (atmoUniforms.scale) atmoUniforms.scale.value = 1 / thickness;
+      if (atmoUniforms.scaleOverScaleDepth) atmoUniforms.scaleOverScaleDepth.value = 4 / thickness;
+      if (atmoUniforms.marchDistance) atmoUniforms.marchDistance.value = this.moonDistance;
+      atmoUniforms.lightPosition?.value.copy(scratch.lightPosition);
+      atmoUniforms.sunDirection?.value.copy(scratch.sunDirection);
     }
-    
-    // Update meteor fire trails
-    this.meteors.forEach(meteor => {
-      if (meteor.fireTrail && meteor.fireTrail.material.uniforms) {
-        meteor.fireTrail.material.uniforms.time.value = time;
-        meteor.fireTrail.material.uniforms.cameraPosition.value.copy(cameraPosition);
-        meteor.fireTrail.material.uniforms.earthPosition.value.copy(earthPosition);
-        meteor.fireTrail.material.uniforms.earthRadius.value = earthRadius;
-        meteor.fireTrail.material.uniforms.lightPosition.value.copy(lightPosition);
-      }
-    });
-    
-    // Update particle systems (particles.js handles its own updates)
-    // No manual updates needed for particles.js
+
+    for (let i = 0; i < this.meteors.length; i++) {
+      const uniforms = this.meteors[i].fireTrail?.material?.uniforms;
+      if (!uniforms) continue;
+      if (uniforms.time) uniforms.time.value = time;
+      uniforms.cameraPosition?.value.copy(scratch.cameraPosition);
+      uniforms.earthPosition?.value.copy(scratch.earthPosition);
+      if (uniforms.earthRadius) uniforms.earthRadius.value = earthRadius;
+      uniforms.lightPosition?.value.copy(scratch.lightPosition);
+    }
   }
 
   // Update particle systems
@@ -3244,7 +3223,7 @@ class App {
     // Calculate realistic mass and properties
     const density = 1600; // kg/m³ - typical asteroid density
     const radius = midSize / 2; // radius in meters
-    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const mass = meteorMassKg(density, radius);
     const area = Math.PI * Math.pow(radius, 2);
     
     // Create randomized meteor mesh
@@ -3270,7 +3249,7 @@ class App {
     const speed = speedEl ? parseFloat(speedEl.value) : 0.05;
     
     // Convert velocity to scene units and create physics velocity
-    const sceneVelocity = dir.multiplyScalar(speed);
+    const sceneVelocity = dir.clone().multiplyScalar(speed);
     const physVelocity = dir.clone().multiplyScalar(speed * this.SCENE_SCALE);
     
     // Add meteor with all properties
@@ -3279,7 +3258,8 @@ class App {
       velocity: sceneVelocity, 
       physVelocity: physVelocity, 
       active: true, 
-      mass, 
+      mass,
+      density,
       area, 
       size: midSize,
       burning: false,
@@ -3347,19 +3327,21 @@ class App {
 
   // Update trajectory lines
   updateTrajectoryLines() {
-    // Iterate backwards to safely remove items
+    const now = performance.now();
+    const refresh = !this._lastTrajectoryUpdate || now - this._lastTrajectoryUpdate >= 200;
+    if (refresh) this._lastTrajectoryUpdate = now;
+
     for (let i = this.trajectoryLines.length - 1; i >= 0; i--) {
       const traj = this.trajectoryLines[i];
       if (!traj.meteor.active) {
-        // Remove trajectory when meteor is destroyed
         this.scene.remove(traj.line);
+        traj.line.geometry.dispose();
+        traj.line.material.dispose();
         this.trajectoryLines.splice(i, 1);
         continue;
       }
-      
-      // Update trajectory points
-      const points = this.calculateTrajectory(traj.meteor);
-      traj.line.geometry.setFromPoints(points);
+      if (!refresh) continue;
+      traj.line.geometry.setFromPoints(this.calculateTrajectory(traj.meteor));
     }
   }
 
@@ -3377,10 +3359,11 @@ class App {
     const dir = new THREE.Vector3().subVectors(this.cursor.position, this.camera.position).normalize();
     const density = 1600; // kg/m³ - typical asteroid density
     const radius = size / 2; // radius in meters
-    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const mass = meteorMassKg(density, radius);
     const area = Math.PI * Math.pow(radius, 2);
   this.scene.add(meteor);
   const label = this.createLabel(`Meteor (${(size).toFixed(2)} m)`, meteor.position);
+    const sceneVelocity = dir.clone().multiplyScalar(speed);
     const physVelocity = dir.clone().multiplyScalar(speed * this.SCENE_SCALE);
     
     // Fix scaling: size is diameter in meters, convert to scene units
@@ -3392,11 +3375,12 @@ class App {
     
     const meteorData = { 
       mesh: meteor, 
-      velocity: dir.multiplyScalar(speed), 
+      velocity: sceneVelocity, 
       physVelocity, 
       active: true, 
       label, 
-      mass, 
+      mass,
+      density,
       area, 
       size,
       burning: false,
@@ -3415,19 +3399,27 @@ class App {
 
   // Update meteor stats display
   updateMeteorStats() {
-    if (!this.lastMeteorData) return;
-    
     const speed = document.getElementById('lastSpeed');
     const size = document.getElementById('lastSize');
     const mass = document.getElementById('lastMass');
     const energy = document.getElementById('lastEnergy');
     const status = document.getElementById('lastStatus');
-    
-    if (speed) speed.innerText = this.lastMeteorData.entrySpeed.toFixed(1);
-    if (size) size.innerText = this.lastMeteorData.size.toFixed(2);
-    if (mass) mass.innerText = this.lastMeteorData.mass.toFixed(0);
-    if (energy) energy.innerText = this.lastMeteorData.energy.toExponential(2);
-    if (status) status.innerText = this.lastMeteorData.active ? 'Active' : 'Impacted';
+    const data = this.lastMeteorData;
+
+    if (!data) {
+      if (speed) speed.textContent = '-';
+      if (size) size.textContent = '-';
+      if (mass) mass.textContent = '-';
+      if (energy) energy.textContent = '-';
+      if (status) status.textContent = '-';
+      return;
+    }
+
+    if (speed) speed.textContent = data.entrySpeed.toFixed(1);
+    if (size) size.textContent = data.size.toFixed(2);
+    if (mass) mass.textContent = data.mass.toFixed(0);
+    if (energy) energy.textContent = data.energy.toExponential(2);
+    if (status) status.textContent = data.active ? 'Active' : 'Impacted';
   }
 
   // Initialize map (Note: canvas map is not used, using Leaflet instead)
@@ -3678,7 +3670,8 @@ class App {
     });
     this.orbitalObjects = [];
     
-    this.impactCount = 0; const ic = document.getElementById('impactCount'); if(ic) ic.innerText = '0';
+    this.impactCount = 0; const ic = document.getElementById('impactCount'); if(ic) ic.textContent = '0';
+    if (this.cachedElements?.meteorCount) this.cachedElements.meteorCount.textContent = '0';
     this.totalImpactEnergy = 0;
     this.largestImpactEnergy = 0;
     this.frameCount = 0;
@@ -3694,13 +3687,7 @@ class App {
     // Skip updates if paused
     if (this.paused) {
       this.controls.update();
-      // Use effect composer for post-processing
-      if (this.effectComposer) {
-        this.effectComposer.render();
-      } else {
-      // Use standard rendering for now
-      this.renderer.render(this.scene, this.camera);
-      }
+      this.renderFrame();
       return;
     }
     
@@ -3906,7 +3893,7 @@ class App {
           const ke = 0.5 * (meteor.mass || 1) * speedAtImpact * speedAtImpact;
           this.createExplosion(pos.clone(), ke, meteor.size);
           
-          const keTons = ke / 4.184e9;
+          const kilotons = kilotonsFromJoules(ke);
           const blastRadius = this.calculateBlastRadius(ke);
           
           // Calculate crater formation using Holsapple-Schmidt scaling
@@ -3917,7 +3904,7 @@ class App {
           this.createCraterVisualization(pos.clone(), craterData);
           
           const ie = document.getElementById('impactEnergy'); 
-          if(ie) ie.innerText = `${ke.toExponential(3)} J (~${keTons.toFixed(2)} kt)`;
+          if(ie) ie.innerText = `${ke.toExponential(3)} J (~${kilotons.toFixed(2)} kt)`;
           
           // Add to Leaflet map with crater data
           const latLon = this.positionToLatLon(pos);
@@ -3990,12 +3977,23 @@ class App {
     this.meteors = this.meteors.filter(m=>m.active);
 
     this.controls.update();
-      // Use standard rendering for now
-      this.renderer.render(this.scene, this.camera);
+    this.renderFrame();
     this.updateLabels();
   }
 
+  renderFrame() {
+    if (this.usePostProcessing && this.effectComposer) {
+      this.effectComposer.render();
+      return;
+    }
+    this.renderer.render(this.scene, this.camera);
+  }
+
   updatePredictedImpact(){
+    if (!this.cursor || !this.camera) return;
+    const now = performance.now();
+    if (this._lastPrediction && now - this._lastPrediction < 120) return;
+    this._lastPrediction = now;
     const speed = parseFloat(document.getElementById('speed')?.value || 0.05);
     const origin = this.camera.position.clone();
     const dir = this.cursor.position.clone().sub(this.camera.position).normalize();
@@ -4031,17 +4029,29 @@ class App {
     this.impactEffects.push({ mesh:ring });
   }
 
+  async fetchNasa(pathname, params, apiKey) {
+    const url = new URL(pathname, 'https://api.nasa.gov');
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, String(value));
+    }
+    url.searchParams.set('api_key', apiKey);
+    const response = await fetch(url, { referrerPolicy: 'no-referrer' });
+    if (!response.ok) {
+      throw new Error(`NASA API error (${response.status})`);
+    }
+    return response.json();
+  }
+
   // NASA fetchers kept as-is but bound to this
   async fetchAsteroidList(loadMore=false){
     const apiKey = document.getElementById('apiKey')?.value.trim();
     if(!apiKey) return showEnhancedAlert('API Key Required', 'Please enter your NASA API key to fetch asteroid data.', 'warning');
     if(!loadMore) { this.neoPage = 0; this.asteroidList = []; document.getElementById('asteroidSelect').innerHTML = ''; }
     try{
-      const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/browse?page=${this.neoPage||0}&size=20&api_key=${apiKey}`);
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      const data = await res.json();
+      const data = await this.fetchNasa('/neo/rest/v1/neo/browse', {
+        page: this.neoPage || 0,
+        size: 20
+      }, apiKey);
       const select = document.getElementById('asteroidSelect');
       data.near_earth_objects.forEach(a=>{
         this.asteroidList = this.asteroidList || [];
@@ -4090,11 +4100,7 @@ class App {
     const apiKey = document.getElementById('apiKey')?.value.trim(); 
     if(!apiKey) return null;
     try{ 
-      const res = await fetch(`https://api.nasa.gov/neo/rest/v1/neo/${id}?api_key=${apiKey}`); 
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      return await res.json(); 
+      return await this.fetchNasa(`/neo/rest/v1/neo/${encodeURIComponent(id)}`, {}, apiKey); 
     }catch(err){ 
       console.error(err); 
       return null; 
@@ -4124,15 +4130,15 @@ class App {
     const avgDiameter = (details.estimated_diameter.meters.estimated_diameter_min + details.estimated_diameter.meters.estimated_diameter_max) / 2;
     const density = await this.getMeteorDensityFromDetails(details);
     const radius = avgDiameter / 2; // radius in meters
-    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const mass = meteorMassKg(density, radius);
     const velocity = parseFloat(details.close_approach_data[0].relative_velocity.kilometers_per_second) * 1000 || 20000; // Convert to m/s with fallback
     const kineticEnergy = 0.5 * mass * velocity * velocity;
-    const kilotons = kineticEnergy / 4.184e12;
+    const kilotons = kilotonsFromJoules(kineticEnergy);
     const blastRadius = this.calculateBlastRadius(kineticEnergy);
     
     // Update UI with detailed information
     document.getElementById('asteroidData').innerHTML = `
-      <b>${details.name}</b><br>
+      <b>${escapeHtml(details.name)}</b><br>
       Min Diameter: ${details.estimated_diameter.meters.estimated_diameter_min.toFixed(1)} m<br>
       Max Diameter: ${details.estimated_diameter.meters.estimated_diameter_max.toFixed(1)} m<br>
       <b>Mid Diameter: ${avgDiameter.toFixed(1)} m</b><br>
@@ -4184,12 +4190,12 @@ class App {
     // Calculate realistic mass and properties
     const density = 1600; // kg/m³ - typical asteroid density
     const radius = midSize / 2; // radius in meters
-    const mass = density * radius * Math.PI; // mass = density × radius × π
+    const mass = meteorMassKg(density, radius);
     const area = Math.PI * Math.pow(radius, 2);
     
     // Update UI with detailed information
     document.getElementById('asteroidData').innerHTML = `
-      <b>${details.name}</b><br>
+      <b>${escapeHtml(details.name)}</b><br>
       Min Diameter: ${minSize.toFixed(1)} m<br>
       Max Diameter: ${maxSize.toFixed(1)} m<br>
       <b>Mid Diameter: ${midSize.toFixed(1)} m</b><br>
@@ -4225,9 +4231,10 @@ class App {
     }
     
     // Convert velocity to scene units and create physics velocity
-    const dir = new THREE.Vector3(0, 0, -1).normalize();
-    const sceneVelocity = dir.multiplyScalar(velocity / 50); // Convert km/s to scene units
-    const physVelocity = dir.clone().multiplyScalar(velocity * 1000); // m/s for physics
+    const dir = new THREE.Vector3(0, 0, -1);
+    const physSpeed = velocity * 1000;
+    const sceneVelocity = dir.clone().multiplyScalar(physSpeed / this.SCENE_SCALE);
+    const physVelocity = dir.clone().multiplyScalar(physSpeed);
     
     // Add meteor with all properties
     const asteroidData = { 
@@ -4235,7 +4242,8 @@ class App {
       velocity: sceneVelocity, 
       physVelocity: physVelocity, 
       active: true, 
-      mass, 
+      mass,
+      density,
       area, 
       size: midSize,
       burning: false,
@@ -4255,32 +4263,39 @@ class App {
   }
 
   loadHighResEarthTexture(){
-    // First ask user for a USGS (or other) URL to prioritize
-    const userUrl = window.prompt('Enter a USGS or remote Earth texture URL (leave blank to use defaults):', '');
+    const userUrl = window.prompt('Enter an https Earth texture URL (leave blank to use the NASA default):', '');
     const urls = [];
-    if(userUrl && userUrl.trim()) urls.push(userUrl.trim());
-    // defaults (NASA Blue Marble, then fallback world map)
+    if (userUrl && userUrl.trim()) {
+      try {
+        const parsed = new URL(userUrl.trim());
+        if (parsed.protocol === 'https:') urls.push(parsed.href);
+        else showEnhancedAlert('Unsupported URL', 'Only https texture URLs are allowed.', 'warning');
+      } catch {
+        showEnhancedAlert('Invalid URL', 'That texture URL could not be parsed.', 'warning');
+      }
+    }
     urls.push('https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57730/land_ocean_ice_2012044_lrg.jpg');
-    urls.push('https://upload.wikimedia.org/wikipedia/commons/8/80/World_map_-_low_resolution.svg');
     const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('anonymous');
     let tried = 0;
-    const tryLoad = ()=>{
-      if(tried>=urls.length) return alert('All texture loads failed (CORS or network)');
+    const tryLoad = () => {
+      if (tried >= urls.length) {
+        showEnhancedAlert('Texture failed', 'All Earth texture loads failed (network or CORS).', 'error');
+        return;
+      }
       const url = urls[tried++];
-      loader.load(url, tex=>{
+      loader.load(url, tex => {
         const earth = this.scene.getObjectByName('earth');
-        if(earth && earth.material){
-            // ensure material doesn't tint the incoming texture (avoid black-looking map)
-            if(earth.material.color) earth.material.color.setHex(0xffffff);
-            tex.encoding = THREE.sRGBEncoding;
-            tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
-            tex.minFilter = THREE.LinearMipmapLinearFilter;
-            tex.magFilter = THREE.LinearFilter;
-            tex.generateMipmaps = true;
-            earth.material.map = tex;
-            earth.material.needsUpdate = true;
-          }
-      }, undefined, err=>{ console.warn('Texture load failed', url, err); tryLoad(); });
+        if (earth && earth.material) {
+          if (earth.material.color) earth.material.color.setHex(0xffffff);
+          this.applyColorMap(tex);
+          earth.material.map = tex;
+          earth.material.needsUpdate = true;
+        }
+      }, undefined, () => {
+        console.warn('Texture load failed');
+        tryLoad();
+      });
     };
     tryLoad();
   }
@@ -4299,6 +4314,7 @@ class App {
     
     this.camera.aspect = width / height; 
     this.camera.updateProjectionMatrix(); 
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
     
     // Update effect composer size if it exists
@@ -4314,12 +4330,15 @@ class App {
   }
 }
 
-// Initialize the app when DOM is loaded
-document.addEventListener('DOMContentLoaded', async () => {
+async function boot() {
   const app = new App();
   await app.init();
   app.animate();
-  
-  // expose for debugging
   window.app = app;
-});
+}
+
+if (document.readyState === 'complete') {
+  boot();
+} else {
+  document.addEventListener('DOMContentLoaded', () => { boot(); });
+}
