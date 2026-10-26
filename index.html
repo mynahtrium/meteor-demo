@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="description" content="Interactive 3D meteor impact simulation with NASA asteroid data." />
   <title>Meteor Impact Simulation</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -14,19 +14,19 @@
   <!-- Quick Stats Bar (Top Center) -->
   <div id="quickStatsUI">
     <div class="stat-item">
-      <span class="stat-label">Active Meteors:</span>
+      <span class="stat-label"><span class="label-long">Active Meteors</span><span class="label-short">Meteors</span></span>
       <span class="stat-value" id="meteorCount">0</span>
     </div>
     <div class="stat-item">
-      <span class="stat-label">Total Impacts:</span>
+      <span class="stat-label"><span class="label-long">Total Impacts</span><span class="label-short">Impacts</span></span>
       <span class="stat-value" id="impactCount">0</span>
     </div>
     <div class="stat-item">
-      <span class="stat-label">Last Impact Energy:</span>
+      <span class="stat-label"><span class="label-long">Last Impact Energy</span><span class="label-short">Energy</span></span>
       <span class="stat-value" id="impactEnergy">-</span>
     </div>
     <div class="stat-item">
-      <span class="stat-label">Simulation Time:</span>
+      <span class="stat-label"><span class="label-long">Simulation Time</span><span class="label-short">Time</span></span>
       <span class="stat-value" id="simTime">0.0s</span>
     </div>
   </div>
@@ -148,6 +148,22 @@
     <input type="file" id="uploadTex" accept="image/*" autocomplete="off">
 
     <div id="asteroidData"></div>
+  </div>
+
+  <div id="mobileChrome">
+    <div id="mobileTabs" role="tablist" aria-label="Simulation panels">
+      <button type="button" role="tab" id="tabControls" data-panel="ui" aria-controls="ui" aria-selected="false">Controls</button>
+      <button type="button" role="tab" id="tabCamera" data-panel="cameraFocusUI" aria-controls="cameraFocusUI" aria-selected="false">Camera</button>
+      <button type="button" role="tab" id="tabMeteor" data-panel="statsUI" aria-controls="statsUI" aria-selected="false">Meteor</button>
+      <button type="button" role="tab" id="tabMap" data-panel="mapUI" aria-controls="mapUI" aria-selected="false">Map</button>
+      <button type="button" role="tab" id="tabStats" data-panel="statisticsUI" aria-controls="statisticsUI" aria-selected="false">Stats</button>
+    </div>
+    <div id="mobileBar">
+      <button type="button" id="mobileFire">Fire</button>
+      <button type="button" id="mobilePause">Pause</button>
+      <button type="button" id="mobileReset">Reset</button>
+      <button type="button" id="mobilePanels" aria-expanded="false" aria-controls="mobileTabs">Panels</button>
+    </div>
   </div>
   <script type="module" src="/main.js"></script>
 </body>
