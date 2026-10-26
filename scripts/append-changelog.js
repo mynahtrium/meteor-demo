@@ -1,7 +1,8 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const readmePath = path.join(__dirname, '..', 'README.md');
+const readmePath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'README.md');
 // Produce a timestamp in Europe/Istanbul (GMT+3) formatted like: 2025-10-04T14:23:45+03:00
 function formatIstanbulISO(date) {
   // Istanbul is UTC+3

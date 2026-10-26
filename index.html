@@ -2,28 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Interactive 3D meteor impact simulation with NASA asteroid data." />
   <title>Meteor Impact Simulation</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <style>
-    /* Emergency fallback styles */
-    body { 
-      background: #0b1020 !important; 
-      color: #e6eef8 !important; 
-      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial !important;
-      margin: 0 !important;
-      overflow: hidden !important;
-    }
-    #ui, #cameraFocusUI, #statsUI, #mapUI, #statisticsUI, #quickStatsUI {
-      background: linear-gradient(180deg, rgba(20,24,36,0.9), rgba(12,14,22,0.85)) !important;
-      color: #e6eef8 !important;
-      border-radius: 12px !important;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.6) !important;
-    }
+    html, body { margin: 0; background: #0b1020; color: #e6eef8; }
   </style>
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Leaflet JavaScript -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <!-- Quick Stats Bar (Top Center) -->
@@ -49,10 +34,10 @@
   <!-- Camera Focus UI (Top Right) -->
   <div id="cameraFocusUI">
     <h3>Camera Focus</h3>
-    <button id="focusEarth">Focus Earth</button>
-    <button id="focusMoon">Focus Moon</button>
-    <button id="focusMeteor">Focus Last Meteor</button>
-    <button id="focusFree">Free Camera</button>
+    <button type="button" id="focusEarth">Focus Earth</button>
+    <button type="button" id="focusMoon">Focus Moon</button>
+    <button type="button" id="focusMeteor">Focus Last Meteor</button>
+    <button type="button" id="focusFree">Free Camera</button>
   </div>
 
   <!-- Stats UI (Bottom Left) -->
@@ -72,8 +57,8 @@
     <div class="map-header">
       <h3>Impact Map</h3>
       <div class="map-controls">
-        <button id="toggleTsunamiZones" class="map-toggle">Hide Tsunami</button>
-        <button id="toggleMapSize" class="map-toggle">Expand</button>
+        <button type="button" id="toggleTsunamiZones" class="map-toggle">Hide Tsunami</button>
+        <button type="button" id="toggleMapSize" class="map-toggle">Expand</button>
       </div>
     </div>
     <div id="googleMap" class="map-container"></div>
@@ -115,7 +100,7 @@
   </div>
 
   <div id="ui">
-    <label>Simulation Speed:</label>
+    <label for="simSpeed">Simulation Speed:</label>
     <div class="speed-control">
       <input type="range" id="simSpeed" min="0.01" max="10" step="0.01" value="1">
       <input type="number" id="simSpeedInput" min="0.01" max="1000" step="0.01" value="1" placeholder="Enter speed">
@@ -127,7 +112,7 @@
       <div class="small">x <span id="simSpeedVal">1.00</span></div>
     </div>
 
-    <label>Meteor Speed</label>
+    <label for="speed">Meteor Speed</label>
     <div class="speed-control">
       <input type="range" id="speed" min="0.01" max="0.2" step="0.01" value="0.05">
       <input type="number" id="speedInput" min="0.01" max="10" step="0.01" value="0.05" placeholder="Enter speed">
@@ -135,29 +120,31 @@
     </div>
 
     <div class="button-row">
-      <button id="reset">Reset</button>
-      <button id="pause">Pause</button>
+      <button type="button" id="reset">Reset</button>
+      <button type="button" id="pause">Pause</button>
     </div>
-    <button id="fire">Fire</button>
+    <button type="button" id="fire">Fire</button>
     <hr>
 
-    <label>NASA API Key:</label>
-    <input type="password" id="apiKey" placeholder="Enter your key" autocomplete="on" autocorrect="off" autocapitalize="off" spellcheck="false">
-    <button id="fetch">Fetch Asteroid List</button>
-    <button id="loadMore">Load More Asteroids</button>
+    <form id="nasaKeyForm" autocomplete="off" onsubmit="return false">
+      <label for="apiKey">NASA API Key:</label>
+      <input type="password" id="apiKey" name="nasa-api-key" placeholder="Enter your key" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </form>
+    <button type="button" id="fetch">Fetch Asteroid List</button>
+    <button type="button" id="loadMore">Load More Asteroids</button>
 
-    <label>Select Asteroid:</label>
+    <label for="asteroidSelect">Select Asteroid:</label>
     <select id="asteroidSelect"></select>
-    <button id="selectAsteroid">Select Asteroid</button>
+    <button type="button" id="selectAsteroid">Select Asteroid</button>
 
     <label>Physics</label>
-    <button id="toggleAtmosphere">Show Atmosphere</button>
-    <button id="toggleMoon">Show Moon</button>
-    <button id="toggleGravityViz">Show Gravity Fields</button>
+    <button type="button" id="toggleAtmosphere">Show Atmosphere</button>
+    <button type="button" id="toggleMoon">Show Moon</button>
+    <button type="button" id="toggleGravityViz">Show Gravity Fields</button>
     
     <label>Texture</label>
-    <button id="highResTex">Load High-res Earth Texture</button>
-    <label style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
+    <button type="button" id="highResTex">Load High-res Earth Texture</button>
+    <label for="uploadTex" style="margin-top:6px;display:block;font-weight:normal">Or upload a local Earth texture:</label>
     <input type="file" id="uploadTex" accept="image/*" autocomplete="off">
 
     <div id="asteroidData"></div>
